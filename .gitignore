@@ -2,3 +2,5 @@
 venv/
 *.log
 *.key
+*.db
+*.png
