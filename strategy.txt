@@ -1,49 +1,29 @@
-1. 레버리지 활용
-초기 전략: 고배율 스캘핑
-
-비트멕스와 같은 선물거래소에서 최대 100배의 레버리지를 활용.
-짧은 시간 동안 큰 수익을 목표로 하며, 빠른 진입과 청산이 특징.
-시장 변동성을 적극적으로 활용하여 단타 매매를 통해 수익 실현.
-현재 전략: 저배율 스윙 매매
-
-자산 규모가 커지면서 고배율 거래에서 저배율 거래로 전환.
-현물 및 선물거래를 병행하며 중기 및 장기적인 추세를 따라가는 매매 방식.
-2. 리스크 관리
-손절매 원칙
-
-손절 라인을 엄격하게 설정하여 빠르게 손실을 최소화.
-"잘못된 진입은 빨리 인정하고 빠져나와야 한다"는 철학을 고수.
-자산 일부 현금화
-
-수익이 발생할 때마다 일정 자산을 출금하거나 현금으로 보유.
-자산을 현금화하여 시장 변동성에 대비하고 리스크를 줄임.
-분할 매매
-
-한 번에 모든 자금을 투입하지 않고, 분할 매수 및 매도를 통해 평균 단가를 조절.
-3. 시장 분석 및 진입 전략
-거래량 및 캔들 패턴 분석
-
-거래량 증가 여부와 캔들 차트의 패턴을 중시.
-특정 패턴(예: 상승 삼각형, 돌파형 캔들)을 활용하여 매매 타이밍 결정.
-큰 자금 흐름 확인
-
-대규모 자금이 시장에 들어오는 시점을 포착하여 진입.
-"고래"들의 행동을 추적하는 데 집중.
-4. 심리적 안정과 냉철함
-감정적 매매를 철저히 배제하며, 차분하게 계획된 전략을 실행.
-시장의 FOMO(Fear Of Missing Out, 상승장에서 놓치는 두려움)를 경계.
-자신의 매매 시스템에 대한 신뢰를 유지하고, 외부 의견에 휘둘리지 않음.
-5. 기타 특징적인 전략
-변동성 활용
-
-비트코인과 암호화폐 시장의 높은 변동성을 적극적으로 활용.
-변동성이 커질 때 더 높은 수익을 노리며, 이를 위해 시장의 주요 뉴스와 이벤트를 면밀히 관찰.
-거래소별 전략 차별화
-
-비트멕스에서는 고배율 단타를, 바이낸스에서는 저배율 중기 매매를 병행.
-핵심 요약
-초기 고배율 단타 매매 → 저배율 스윙 매매로 전환.
-손절매와 분할 매매로 리스크 관리.
-거래량과 차트 패턴 분석을 통해 진입 및 청산 결정.
-자산 일부를 현금화하여 시장 변동성 대비.
-냉철한 심리와 시장의 큰 흐름을 파악하는 능력.
+The Trading Strategies of Wonyotti, a Prominent Korean Bitcoin Investor
+1. Minimalist Trading
+Wonyotti emphasizes the importance of simplicity in trading.
+He avoids overly complex technical indicators and strategies, focusing on basic price action and a small set of indicators.
+This approach minimizes confusion and reduces the chances of overanalyzing the market.
+2. Risk Management as the Core Principle
+Strict stop-loss rules: Wonyotti prioritizes setting and adhering to stop-loss levels to prevent significant losses.
+Position sizing: He carefully calculates the size of each trade, ensuring that no single trade jeopardizes his portfolio.
+Risk-reward ratio: Each trade is evaluated based on a favorable risk-to-reward ratio, often aiming for at least a 1:2 ratio.
+3. Scalping and Short-Term Trades
+Wonyotti primarily focuses on short-term trading, such as scalping or day trading.
+He seeks to capitalize on small price movements, entering and exiting trades quickly to lock in profits.
+High-frequency trading opportunities in highly liquid markets are a key focus.
+4. Emotional Discipline
+Emotional control is central to Wonyotti’s success. He avoids impulsive decisions by sticking to pre-defined trading rules.
+He advises against trading out of greed or fear, emphasizing that emotional trading often leads to poor decisions.
+5. Market Observation and Adaptability
+Wonyotti continuously observes market trends and adjusts his strategy accordingly.
+He does not adhere rigidly to a single method but adapts to changing market conditions to stay profitable.
+6. Leverage Management
+While leverage can amplify profits, Wonyotti uses it conservatively to avoid catastrophic losses.
+He warns against over-leveraging, which is a common pitfall among novice traders.
+7. Learning from Losses
+Each loss is treated as a learning opportunity. Wonyotti analyzes his mistakes to refine his strategies.
+This iterative process of improvement has been a cornerstone of his trading philosophy.
+Key Quotes from Wonyotti
+"Trading is a marathon, not a sprint. Consistency is more important than quick profits."
+"The best trader is not the one who makes the most money in a single trade, but the one who survives long enough to trade another day."
+This disciplined, minimalist approach has made Wonyotti a well-respected figure in the Bitcoin trading community.
