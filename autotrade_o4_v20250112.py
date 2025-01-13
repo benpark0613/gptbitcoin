@@ -167,45 +167,58 @@ def generate_reflection(trades_df, current_market_data):
         logger.error(f"Error extracting response content: {e}")
         return None
 
-
-# 데이터프레임에 보조 지표를 추가하는 함수
 def add_indicators(df):
-    # 볼린저 밴드 추가
+    # Bollinger Bands (중단기 스윙 + 공격적 파라미터 예시)
     indicator_bb = ta.volatility.BollingerBands(
-        close=df["close"], window=20, window_dev=2
+        close=df["close"], 
+        window=24,      # 기존 20 → 24로 증가
+        window_dev=2.1  # 기존 2 → 2.1로 소폭 확대
     )
     df["bb_bbm"] = indicator_bb.bollinger_mavg()
     df["bb_bbh"] = indicator_bb.bollinger_hband()
     df["bb_bbl"] = indicator_bb.bollinger_lband()
+    
+    # RSI (공격적 세팅: window=7)
+    df["rsi"] = ta.momentum.RSIIndicator(close=df["close"], window=7).rsi()
 
-    # RSI (Relative Strength Index) 추가
-    df["rsi"] = ta.momentum.RSIIndicator(close=df["close"], window=14).rsi()
-
-    # MACD (Moving Average Convergence Divergence) 추가
-    macd = ta.trend.MACD(close=df["close"])
+    # MACD (공격적 세팅: 6,13,5)
+    macd = ta.trend.MACD(
+        close=df["close"],
+        window_slow=13,  # 기본값 26 → 13
+        window_fast=6,   # 기본값 12 → 6
+        window_sign=5    # 기본값 9  → 5
+    )
     df["macd"] = macd.macd()
     df["macd_signal"] = macd.macd_signal()
     df["macd_diff"] = macd.macd_diff()
 
-    # 이동평균선 (단기, 장기)
-    df["sma_20"] = ta.trend.SMAIndicator(close=df["close"], window=20).sma_indicator()
-    df["ema_12"] = ta.trend.EMAIndicator(close=df["close"], window=12).ema_indicator()
+    # 이동평균선 (SMA=14, EMA=8)
+    df["sma_14"] = ta.trend.SMAIndicator(close=df["close"], window=14).sma_indicator()
+    df["ema_8"] = ta.trend.EMAIndicator(close=df["close"], window=8).ema_indicator()
 
-    # Stochastic Oscillator 추가
+    # Stochastic (window=9, smooth_window=3)
     stoch = ta.momentum.StochasticOscillator(
-        high=df["high"], low=df["low"], close=df["close"], window=14, smooth_window=3
+        high=df["high"], 
+        low=df["low"], 
+        close=df["close"], 
+        window=9,       # 기본값 14 → 9
+        smooth_window=3 # 기존 3 유지
     )
     df["stoch_k"] = stoch.stoch()
     df["stoch_d"] = stoch.stoch_signal()
 
-    # Average True Range (ATR) 추가
+    # ATR (Average True Range, window=14)
     df["atr"] = ta.volatility.AverageTrueRange(
-        high=df["high"], low=df["low"], close=df["close"], window=14
+        high=df["high"], 
+        low=df["low"], 
+        close=df["close"], 
+        window=14
     ).average_true_range()
 
-    # On-Balance Volume (OBV) 추가
+    # OBV (On-Balance Volume)
     df["obv"] = ta.volume.OnBalanceVolumeIndicator(
-        close=df["close"], volume=df["volume"]
+        close=df["close"], 
+        volume=df["volume"]
     ).on_balance_volume()
 
     return df
@@ -305,7 +318,7 @@ def ai_trading():
             reflection = generate_reflection(recent_trades, current_market_data)
 
             # API 호출 간 대기 시간 추가
-            time.sleep(10)  # 2초 대기 (필요에 따라 증가 가능)
+            time.sleep(10)  # 10초 대기 (필요에 따라 증가 가능)
 
             # AI 모델에 반성 내용 제공
             response = client.chat.completions.create(
@@ -502,12 +515,12 @@ if __name__ == "__main__":
             trading_in_progress = False
 
     ## 테스트용 바로 실행
-    # job()
+    job()
 
     ## 매일 특정 시간(예: 오전 9시, 오후 3시, 오후 9시)에 실행
-    schedule.every().day.at("08:00").do(job)
-    schedule.every().day.at("16:00").do(job)
-    schedule.every().day.at("00:00").do(job)
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+    # schedule.every().day.at("08:00").do(job)
+    # schedule.every().day.at("16:00").do(job)
+    # schedule.every().day.at("00:00").do(job)
+    # while True:
+    #     schedule.run_pending()
+    #     time.sleep(1)
