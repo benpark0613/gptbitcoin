@@ -1,10 +1,11 @@
+import streamlit as st
 import sqlite3
-
 import pandas as pd
+import numpy as np
+import pyupbit
 import plotly.express as px
 import plotly.graph_objects as go
-import pyupbit
-import streamlit as st
+from plotly.subplots import make_subplots
 
 
 # ==============================

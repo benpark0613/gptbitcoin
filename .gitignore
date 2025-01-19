@@ -4,3 +4,4 @@ venv/
 *.key
 *.db
 *.png
+.idea/
