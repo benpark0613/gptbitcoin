@@ -353,7 +353,7 @@ def ai_trading():
                                 "text": f"""Current investment status: {json.dumps(filtered_balances)}
                                     Orderbook: {json.dumps(orderbook)}
                                     Daily OHLCV with indicators (30 days): {df_daily.to_json()}
-                                    Hourly OHLCV with indicators (24 hours): {df_hourly.to_json()}
+                                    Hourly OHLCV with indicators (48 hours): {df_hourly.to_json()}
                                     Recent news headlines: {json.dumps(news_headlines)}
                                     Fear and Greed Index: {json.dumps(fear_greed_index)}""",
                             },
