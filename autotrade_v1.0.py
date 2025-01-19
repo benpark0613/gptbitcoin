@@ -39,7 +39,7 @@ class TradingDecision(BaseModel):
 
 # SQLite 데이터베이스 초기화 함수 - 거래 내역을 저장할 테이블을 생성
 def init_db():
-    conn = sqlite3.connect("bitcoin_trades.db")
+    conn = sqlite3.connect("../bitcoin_trades.db")
     c = conn.cursor()
     c.execute(
         """CREATE TABLE IF NOT EXISTS trades
@@ -60,15 +60,15 @@ def init_db():
 
 # 거래 기록을 DB에 저장하는 함수
 def log_trade(
-    conn,
-    decision,
-    percentage,
-    reason,
-    btc_balance,
-    krw_balance,
-    btc_avg_buy_price,
-    btc_krw_price,
-    reflection="",
+        conn,
+        decision,
+        percentage,
+        reason,
+        btc_balance,
+        krw_balance,
+        btc_avg_buy_price,
+        btc_krw_price,
+        reflection="",
 ):
     c = conn.cursor()
     timestamp = datetime.now().isoformat()
@@ -109,13 +109,13 @@ def calculate_performance(trades_df):
         return 0  # 기록이 없을 경우 0%로 설정
     # 초기 잔고 계산 (KRW + BTC * 현재 가격)
     initial_balance = (
-        trades_df.iloc[-1]["krw_balance"]
-        + trades_df.iloc[-1]["btc_balance"] * trades_df.iloc[-1]["btc_krw_price"]
+            trades_df.iloc[-1]["krw_balance"]
+            + trades_df.iloc[-1]["btc_balance"] * trades_df.iloc[-1]["btc_krw_price"]
     )
     # 최종 잔고 계산
     final_balance = (
-        trades_df.iloc[0]["krw_balance"]
-        + trades_df.iloc[0]["btc_balance"] * trades_df.iloc[0]["btc_krw_price"]
+            trades_df.iloc[0]["krw_balance"]
+            + trades_df.iloc[0]["btc_balance"] * trades_df.iloc[0]["btc_krw_price"]
     )
     return (final_balance - initial_balance) / initial_balance * 100
 
@@ -142,18 +142,18 @@ def generate_reflection(trades_df, current_market_data):
                 "content": f"""
                 Recent trading data:
                 {trades_df.to_json(orient='records')}
-                
+
                 Current market data:
                 {current_market_data}
-                
+
                 Overall performance in the last 7 days: {performance:.2f}%
-                
+
                 Please analyze this data and provide:
                 1. A brief reflection on the recent trading decisions
                 2. Insights on what worked well and what didn't
                 3. Suggestions for improvement in future trading decisions
                 4. Any patterns or trends you notice in the market data
-                
+
                 Limit your response to 250 words or less.
                 """,
             },
@@ -167,66 +167,59 @@ def generate_reflection(trades_df, current_market_data):
         logger.error(f"Error extracting response content: {e}")
         return None
 
-def add_indicators(df):
-    # Bollinger Bands (평균 16봉, 표준편차 2.1)
-    indicator_bb = ta.volatility.BollingerBands(
-        close=df["close"],
-        window=16,      # 기존보다 짧게
-        window_dev=2.1  # 민감도 조금 증가
-    )
-    df["bb_bbm"] = indicator_bb.bollinger_mavg()
-    df["bb_bbh"] = indicator_bb.bollinger_hband()
-    df["bb_bbl"] = indicator_bb.bollinger_lband()
+def add_indicators_hourly(df):
+    """
+    1시간봉 데이터에 필수 보조지표 추가 (단기 추세 확인용)
+    """
+    # Bollinger Bands (8봉, 단기 변동성 확인)
+    indicator_bb = ta.volatility.BollingerBands(close=df["close"], window=8, window_dev=2.0)
+    df["bb_bbm"] = indicator_bb.bollinger_mavg()  # 중심선
+    df["bb_bbh"] = indicator_bb.bollinger_hband()  # 상단 밴드
+    df["bb_bbl"] = indicator_bb.bollinger_lband()  # 하단 밴드
 
-    # RSI (window=7)
-    # 14 대신 절반가량인 7로 세팅하여 빠른 신호 감지
-    df["rsi"] = ta.momentum.RSIIndicator(close=df["close"], window=7).rsi()
+    # RSI (8봉, 단기 모멘텀)
+    df["rsi"] = ta.momentum.RSIIndicator(close=df["close"], window=8).rsi()
 
-    # MACD (slow=17, fast=8, sign=5)
-    # 기존 26,12,9보다 빠르게
-    macd = ta.trend.MACD(
-        close=df["close"],
-        window_slow=17,
-        window_fast=8,
-        window_sign=5
-    )
-    df["macd"] = macd.macd()
-    df["macd_signal"] = macd.macd_signal()
-    df["macd_diff"] = macd.macd_diff()
-
-    # SMA(16) & EMA(8)
-    # 추세 파악을 위한 이동평균. 일봉 기준으로 보면 16일, 단기 EMA는 8일
-    df["sma_16"] = ta.trend.SMAIndicator(close=df["close"], window=16).sma_indicator()
-    df["ema_8"] = ta.trend.EMAIndicator(close=df["close"], window=8).ema_indicator()
-
-    # Stochastic (window=8, smooth_window=3)
-    # 좀 더 민감하게 설정
+    # Stochastic Oscillator (8봉, 단기 과매수/과매도 확인)
     stoch = ta.momentum.StochasticOscillator(
-        high=df["high"],
-        low=df["low"],
-        close=df["close"],
-        window=8,
-        smooth_window=3
+        high=df["high"], low=df["low"], close=df["close"], window=8, smooth_window=3
     )
-    df["stoch_k"] = stoch.stoch()
-    df["stoch_d"] = stoch.stoch_signal()
+    df["stoch_k"] = stoch.stoch()  # %K 값
+    df["stoch_d"] = stoch.stoch_signal()  # %D 값
 
-    # ATR (window=8)
-    # 변동성 지표도 짧은 주기로 설정하여 민감도 높임
+    # ATR (8봉, 단기 변동성)
     df["atr"] = ta.volatility.AverageTrueRange(
-        high=df["high"],
-        low=df["low"],
-        close=df["close"],
-        window=8
+        high=df["high"], low=df["low"], close=df["close"], window=8
     ).average_true_range()
 
-    # OBV (On-Balance Volume)
-    df["obv"] = ta.volume.OnBalanceVolumeIndicator(
-        close=df["close"],
-        volume=df["volume"]
-    ).on_balance_volume()
+    return df
+
+
+def add_indicators_daily(df):
+    """
+    일봉 데이터에 필수 보조지표 추가 (중기 추세 확인용)
+    """
+    # Bollinger Bands (20봉, 중기 변동성 확인)
+    indicator_bb = ta.volatility.BollingerBands(close=df["close"], window=20, window_dev=2.0)
+    df["bb_bbm"] = indicator_bb.bollinger_mavg()  # 중심선
+    df["bb_bbh"] = indicator_bb.bollinger_hband()  # 상단 밴드
+    df["bb_bbl"] = indicator_bb.bollinger_lband()  # 하단 밴드
+
+    # RSI (14봉, 중기 모멘텀)
+    df["rsi"] = ta.momentum.RSIIndicator(close=df["close"], window=14).rsi()
+
+    # MACD (26, 12, 9, 표준 설정, 중기 추세 분석)
+    macd = ta.trend.MACD(close=df["close"], window_slow=26, window_fast=12, window_sign=9)
+    df["macd"] = macd.macd()  # MACD 값
+    df["macd_signal"] = macd.macd_signal()  # 신호선
+    df["macd_diff"] = macd.macd_diff()  # MACD-신호선 차이
+
+    # ADX (14봉, 중기 추세 강도)
+    adx = ta.trend.ADXIndicator(high=df["high"], low=df["low"], close=df["close"], window=14)
+    df["adx"] = adx.adx()
 
     return df
+
 
 # 공포 탐욕 지수 조회
 def get_fear_and_greed_index():
@@ -285,11 +278,11 @@ def ai_trading():
     # 일간 차트 데이터
     df_daily = pyupbit.get_ohlcv("KRW-BTC", interval="day", count=30)
     df_daily = dropna(df_daily)
-    df_daily = add_indicators(df_daily)  # 중기 추세 확인용 지표 (Bollinger Bands 등 기본값 유지)
+    df_daily = add_indicators_daily(df_daily)  # 중기 추세 확인용 지표 (Bollinger Bands 등 기본값 유지)
     # 1시간 차트 데이터
     df_hourly = pyupbit.get_ohlcv("KRW-BTC", interval="minute60", count=48)  # 과거 2일 데이터 확보
     df_hourly = dropna(df_hourly)
-    df_hourly = add_indicators(df_hourly)  # 단기 매매용 (공격적 설정)
+    df_hourly = add_indicators_hourly(df_hourly)  # 단기 매매용 (공격적 설정)
 
     # 4. 공포 탐욕 지수 가져오기
     fear_greed_index = get_fear_and_greed_index()
@@ -304,7 +297,7 @@ def ai_trading():
         return None
     try:
         # 데이터베이스 연결
-        with sqlite3.connect("bitcoin_trades.db") as conn:
+        with sqlite3.connect("../bitcoin_trades.db") as conn:
             # 최근 거래 내역 가져오기
             recent_trades = get_recent_trades(conn)
 
@@ -503,6 +496,7 @@ if __name__ == "__main__":
     # 중복 실행 방지를 위한 변수
     trading_in_progress = False
 
+
     # 트레이딩 작업을 수행하는 함수
     def job():
         global trading_in_progress
@@ -516,6 +510,7 @@ if __name__ == "__main__":
             logger.error(f"An error occurred: {e}")
         finally:
             trading_in_progress = False
+
 
     ## 테스트용 바로 실행
     job()
