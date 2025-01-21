@@ -1,18 +1,9 @@
-import os
-from dotenv import load_dotenv
-import pyupbit
-import pandas as pd
-import json
-from openai import OpenAI
-import ta
-from ta.utils import dropna
-import time
-import requests
 import logging
-from pydantic import BaseModel
-import sqlite3
-from datetime import datetime, timedelta
-import schedule
+import os
+
+import pyupbit
+from dotenv import load_dotenv
+from ta.utils import dropna
 
 # .env 파일에 저장된 환경 변수를 불러오기 (API 키 등)
 load_dotenv()
@@ -35,16 +26,24 @@ all_balances = upbit.get_balances()
 filtered_balances = [
     balance for balance in all_balances if balance["currency"] in ["BTC", "KRW"]
 ]
-logger.info(all_balances)
 
 # 2. 오더북(호가 데이터) 조회
 orderbook = pyupbit.get_orderbook("KRW-BTC")
-logger.info(orderbook)
 
 # 3. 차트 데이터 조회
 # 1시간봉 데이터
-df_hourly = pyupbit.get_ohlcv("KRW-BTC", interval="minute60", count=48)
+df_hourly = pyupbit.get_ohlcv("KRW-BTC", interval="minute60", count=10000)
 df_hourly = dropna(df_hourly)
+
 # 4시간봉 데이터
-df_daily = pyupbit.get_ohlcv("KRW-BTC", interval="day", count=14)
-df_daily = dropna(df_daily)
+df_4hour = pyupbit.get_ohlcv("KRW-BTC", interval="minute240", count=2500)
+df_4hour = dropna(df_4hour)
+
+# 데이터프레임을 CSV로 저장
+hourly_file_path = "df_hourly.csv"
+df_hourly.to_csv(hourly_file_path, index=True)
+print(f"1시간봉 CSV 파일이 저장되었습니다: {hourly_file_path}")
+
+four_hour_file_path = "df_4hour.csv"
+df_4hour.to_csv(four_hour_file_path, index=True)
+print(f"4시간봉 CSV 파일이 저장되었습니다: {four_hour_file_path}")
