@@ -5,3 +5,5 @@ venv/
 *.db
 *.png
 .idea/
+*.csv
+*.txt
