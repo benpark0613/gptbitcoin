@@ -23,12 +23,12 @@ upbit = pyupbit.Upbit(access, secret)
 
 
 # ============== (2) 폴더 생성 함수 ==============
-def create_folders():
+def create_folders(base_folder_name="upbit_trade_report"):
     """
     기본 베이스 폴더(trade_report) / 날짜 폴더 / 시간 폴더 구조를 생성하고
     최종적으로 저장할 time_folder 경로를 반환
     """
-    base_folder = "trade_report"
+    base_folder = base_folder_name
     if not os.path.exists(base_folder):
         os.makedirs(base_folder)
 
@@ -45,13 +45,40 @@ def create_folders():
     return time_folder
 
 
-# ============== (3) 구글 뉴스 크롤링 관련 함수들 ==============
+# ============== (3) CSV 저장 함수 ==============
+def save_dataframe_to_csv(dataframe, filename, folder_path):
+    """
+    데이터프레임을 CSV 파일로 저장.
+    """
+    file_path = os.path.join(folder_path, filename)
+    dataframe.to_csv(file_path, index=True, index_label="timestamp")  # 인덱스에 제목 추가
+    logger.info(f"{filename} saved to {folder_path}")
+
+# ============== (4) 공포 탐욕 지수 저장 함수 ==============
+def save_fng_to_csv(fear_greed_index, folder_path):
+    """
+    공포 탐욕지수 리스트를 CSV 파일로 저장
+    """
+    if not fear_greed_index:
+        logger.warning("No fear_greed_index data available to save.")
+        return
+
+    csv_filename = os.path.join(folder_path, "fear_greed_index.csv")
+
+    # CSV 필드명: value, value_classification, timestamp, time_until_update 등
+    fieldnames = ["value", "value_classification", "timestamp", "time_until_update"]
+
+    with open(csv_filename, mode="w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in fear_greed_index:
+            writer.writerow(row)
+
+# ============== (4) 구글 뉴스 크롤링 관련 함수 ==============
 def generate_url(query, start=0, date_filter='m'):
     """
-    구글 뉴스 검색 URL을 생성하는 함수
-    query: 검색어
-    start: 페이지 시작 인덱스
-    date_filter: 시간 필터 (d, w, m, y 등)
+    Google 뉴스 검색 URL 생성 함수.
+    date_filter='m'일 경우 지난 1개월, 'w'는 1주, 'd'는 24시간.
     """
     base_url = "https://www.google.com/search"
     params = {
@@ -63,16 +90,12 @@ def generate_url(query, start=0, date_filter='m'):
     }
     return f"{base_url}?{'&'.join([f'{key}={value}' for key, value in params.items()])}"
 
+
 def get_news_on_page(url):
-    """
-    주어진 URL에 대해 뉴스 기사를 크롤링하여
-    title, link, snippet, date, source 를 리스트로 반환
-    """
     headers = {
         "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/91.0.4472.124 Safari/537.36"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         )
     }
     response = requests.get(url, headers=headers)
@@ -105,10 +128,11 @@ def get_news_on_page(url):
         })
     return page_results
 
+
 def get_news_data(query, num_results=10, date_filter='m'):
     """
-    Google 뉴스에서 query로 검색하여 num_results만큼 수집
-    date_filter: 'h'(1시간), 'd'(1일), 'w'(1주), 'm'(1달) 등
+    최대 num_results개를 모을 때까지 페이지를 넘겨가며 뉴스를 수집.
+    지난 date_filter 기간을 제한(qdr:m => 1개월).
     """
     collected_results = []
     start = 0
@@ -117,19 +141,19 @@ def get_news_data(query, num_results=10, date_filter='m'):
         url = generate_url(query, start, date_filter=date_filter)
         page_data = get_news_on_page(url)
         if not page_data:
+            # 더 이상 결과가 없으면 중단
             break
         collected_results.extend(page_data)
-        start += 10
+        start += 10  # 다음 페이지로 이동
 
     return collected_results[:num_results]
 
 
-# ============== (4) 뉴스 CSV 저장 함수 ==============
 def save_news_to_csv(data, folder_path):
     """
-    구글 뉴스 데이터 리스트를 CSV로 저장
+    구글 뉴스 데이터를 CSV로 저장
     """
-    csv_path = os.path.join(folder_path, "news_results.csv")
+    csv_path = os.path.join(folder_path, "google_news.csv")
     with open(csv_path, mode="w", newline="", encoding="utf-8") as csv_file:
         writer = csv.DictWriter(
             csv_file,
@@ -137,101 +161,57 @@ def save_news_to_csv(data, folder_path):
         )
         writer.writeheader()
         writer.writerows(data)
+    logger.info(f"Google News data saved to {csv_path}")
 
 
-# ============== (5) 공포 탐욕 지수 조회 함수 ==============
-def get_fear_and_greed_index(days=7):
-    """
-    일주일(기본:7일) 동안의 Fear and Greed 지수 데이터를 조회
-    """
-    url = f"https://api.alternative.me/fng/?limit={days}"
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()  # {'name':'Fear and Greed Index','data':[...], ... }
-        if 'data' in data:
-            return data['data']  # 리스트 형태의 데이터를 반환
-        else:
-            logger.warning("Unexpected data format.")
-            return None
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error fetching Fear and Greed Index: {e}")
-        return None
-
-
-# ============== (6) 공포 탐욕 지수 저장 함수들 ==============
-def save_fng_to_csv(fear_greed_index, folder_path):
-    """
-    공포 탐욕지수 리스트를 CSV 파일로 저장
-    """
-    if not fear_greed_index:
-        logger.warning("No fear_greed_index data available to save.")
-        return
-
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    csv_filename = os.path.join(folder_path, f"{timestamp}_fear_greed_index.csv")
-
-    # CSV 필드명: value, value_classification, timestamp, time_until_update 등
-    fieldnames = ["value", "value_classification", "timestamp", "time_until_update"]
-
-    with open(csv_filename, mode="w", newline="", encoding="utf-8") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in fear_greed_index:
-            writer.writerow(row)
-
-# ============== (7) 메인 실행부 ==============
+# ============== (5) 메인 실행부 ==============
 if __name__ == "__main__":
     # 1) 폴더 생성
     output_folder = create_folders()
 
-    # 2) 구글 뉴스 데이터 수집 (BTC OR Bitcoin, 지난 1주)
-    news_data = get_news_data(query="BTC OR Bitcoin", num_results=10, date_filter='w')
-    save_news_to_csv(news_data, output_folder)
-
-    # 3) Upbit 잔고 및 호가 정보 수집
+    # 2) Upbit 잔고 및 호가 정보 수집
     all_balances = upbit.get_balances()
     orderbook = pyupbit.get_orderbook("KRW-BTC")
 
-    # 4) OHLCV 데이터 (15분봉, 1시간봉, 4시간봉)
-    df_15min = pyupbit.get_ohlcv("KRW-BTC", interval="minute15", count=2880)
-    df_15min = dropna(df_15min).sort_index(ascending=False)
+    # 3) OHLCV 데이터 수집
+    df_15min = dropna(pyupbit.get_ohlcv("KRW-BTC", interval="minute15", count=2880)).sort_index(ascending=False)
+    df_hourly = dropna(pyupbit.get_ohlcv("KRW-BTC", interval="minute60", count=5000)).sort_index(ascending=False)
+    df_4hour = dropna(pyupbit.get_ohlcv("KRW-BTC", interval="minute240", count=2500)).sort_index(ascending=False)
+    df_daily = dropna(pyupbit.get_ohlcv("KRW-BTC", interval="day", count=1460)).sort_index(ascending=False)
+    df_weekly = dropna(pyupbit.get_ohlcv("KRW-BTC", interval="week", count=208)).sort_index(ascending=False)
 
-    df_hourly = pyupbit.get_ohlcv("KRW-BTC", interval="minute60", count=10000)
-    df_hourly = dropna(df_hourly).sort_index(ascending=False)
+    # 4) CSV 저장 (시세 데이터)
+    save_dataframe_to_csv(df_15min, "15m.csv", output_folder)
+    save_dataframe_to_csv(df_hourly, "1h.csv", output_folder)
+    save_dataframe_to_csv(df_4hour, "4h.csv", output_folder)
+    save_dataframe_to_csv(df_daily, "1d.csv", output_folder)
+    save_dataframe_to_csv(df_weekly, "1w.csv", output_folder)
 
-    df_4hour = pyupbit.get_ohlcv("KRW-BTC", interval="minute240", count=2500)
-    df_4hour = dropna(df_4hour).sort_index(ascending=False)
+    # 5) Balances, Orderbook 분리 저장
+    balances_file = os.path.join(output_folder, "balances.txt")
+    orderbook_file = os.path.join(output_folder, "orderbook.txt")
 
-    # 5) 타임스탬프
-    timestamp = datetime.now().strftime("%Y%m%d%H%M")
-
-    # 6) CSV 저장 (시세 데이터)
-    csv_15min = os.path.join(output_folder, f"{timestamp}_15min.csv")
-    df_15min.to_csv(csv_15min, index=True)
-
-    csv_hourly = os.path.join(output_folder, f"{timestamp}_hourly.csv")
-    df_hourly.to_csv(csv_hourly, index=True)
-
-    csv_4hour = os.path.join(output_folder, f"{timestamp}_4hour.csv")
-    df_4hour.to_csv(csv_4hour, index=True)
-
-    # 7) Balances, Orderbook 분리 저장
-    balances_file = os.path.join(output_folder, f"{timestamp}_balances.txt")
-    orderbook_file = os.path.join(output_folder, f"{timestamp}_orderbook.txt")
-
-    # Balances 파일
+    # Balances 파일 저장
     with open(balances_file, "w", encoding="utf-8") as bf:
         bf.write("=== 현재 투자 상태 (Balances) ===\n")
         json.dump(all_balances, bf, ensure_ascii=False, indent=4)
+        logger.info(f"Balances saved to {balances_file}")
 
-    # Orderbook 파일
+    # Orderbook 파일 저장
     with open(orderbook_file, "w", encoding="utf-8") as of:
         of.write("=== 오더북 데이터 (Orderbook) ===\n")
         json.dump(orderbook, of, ensure_ascii=False, indent=4)
+        logger.info(f"Orderbook saved to {orderbook_file}")
 
-    # 8) 공포 탐욕지수 조회 및 저장
-    fear_greed_index = get_fear_and_greed_index(7)
+    # 6) 구글 뉴스 크롤링
+    query = "BTC OR Bitcoin"
+    num_results = 10
+    date_filter = 'w'  # 'w' => 지난 1주간
+    news_data = get_news_data(query, num_results, date_filter)
+    save_news_to_csv(news_data, output_folder)
+
+    # 7) 공포 탐욕지수 조회 및 저장
+    fear_greed_index = requests.get("https://api.alternative.me/fng/?limit=7").json().get('data', [])
     save_fng_to_csv(fear_greed_index, output_folder)
 
     print("스크립트가 정상적으로 완료되었습니다.")

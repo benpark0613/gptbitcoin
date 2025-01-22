@@ -10,3 +10,4 @@ streamlit
 plotly
 schedule
 BeautifulSoup
+python-binance
