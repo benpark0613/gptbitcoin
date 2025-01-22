@@ -39,7 +39,7 @@ class TradingDecision(BaseModel):
 
 # SQLite 데이터베이스 초기화 함수 - 거래 내역을 저장할 테이블을 생성
 def init_db():
-    conn = sqlite3.connect("../bitcoin_trades.db")
+    conn = sqlite3.connect("../../bitcoin_trades.db")
     c = conn.cursor()
     c.execute(
         """CREATE TABLE IF NOT EXISTS trades
@@ -304,7 +304,7 @@ def ai_trading():
         return None
     try:
         # 데이터베이스 연결
-        with sqlite3.connect("../bitcoin_trades.db") as conn:
+        with sqlite3.connect("../../bitcoin_trades.db") as conn:
             # 최근 거래 내역 가져오기
             recent_trades = get_recent_trades(conn)
 

@@ -1,19 +1,18 @@
-import os
-from dotenv import load_dotenv
-import pyupbit
-import pandas as pd
 import json
-from openai import OpenAI
-import ta
-from ta.utils import dropna
-import time
-import requests
 import logging
+import os
 import sqlite3
+import time
 from datetime import datetime, timedelta
-import re
+
+import pandas as pd
+import pyupbit
+import requests
 import schedule
-import numpy as np
+import ta
+from dotenv import load_dotenv
+from openai import OpenAI
+from pydantic import BaseModel
 
 # .env 파일에 저장된 환경 변수를 불러오기 (API 키 등)
 load_dotenv()
@@ -31,9 +30,16 @@ if not access or not secret:
 upbit = pyupbit.Upbit(access, secret)
 
 
+# OpenAI 구조화된 출력 체크용 클래스
+class TradingDecision(BaseModel):
+    decision: str
+    percentage: int
+    reason: str
+
+
 # SQLite 데이터베이스 초기화 함수 - 거래 내역을 저장할 테이블을 생성
 def init_db():
-    conn = sqlite3.connect("../bitcoin_trades.db")
+    conn = sqlite3.connect("../../bitcoin_trades.db")
     c = conn.cursor()
     c.execute(
         """CREATE TABLE IF NOT EXISTS trades
@@ -54,15 +60,15 @@ def init_db():
 
 # 거래 기록을 DB에 저장하는 함수
 def log_trade(
-    conn,
-    decision,
-    percentage,
-    reason,
-    btc_balance,
-    krw_balance,
-    btc_avg_buy_price,
-    btc_krw_price,
-    reflection="",
+        conn,
+        decision,
+        percentage,
+        reason,
+        btc_balance,
+        krw_balance,
+        btc_avg_buy_price,
+        btc_krw_price,
+        reflection="",
 ):
     c = conn.cursor()
     timestamp = datetime.now().isoformat()
@@ -103,13 +109,13 @@ def calculate_performance(trades_df):
         return 0  # 기록이 없을 경우 0%로 설정
     # 초기 잔고 계산 (KRW + BTC * 현재 가격)
     initial_balance = (
-        trades_df.iloc[-1]["krw_balance"]
-        + trades_df.iloc[-1]["btc_balance"] * trades_df.iloc[-1]["btc_krw_price"]
+            trades_df.iloc[-1]["krw_balance"]
+            + trades_df.iloc[-1]["btc_balance"] * trades_df.iloc[-1]["btc_krw_price"]
     )
     # 최종 잔고 계산
     final_balance = (
-        trades_df.iloc[0]["krw_balance"]
-        + trades_df.iloc[0]["btc_balance"] * trades_df.iloc[0]["btc_krw_price"]
+            trades_df.iloc[0]["krw_balance"]
+            + trades_df.iloc[0]["btc_balance"] * trades_df.iloc[0]["btc_krw_price"]
     )
     return (final_balance - initial_balance) / initial_balance * 100
 
@@ -125,31 +131,31 @@ def generate_reflection(trades_df, current_market_data):
 
     # OpenAI API 호출로 AI의 반성 일기 및 개선 사항 생성 요청
     response = client.chat.completions.create(
-        model="o1-preview",
+        model="gpt-4o",
         messages=[
             {
-                "role": "user",
+                "role": "system",
                 "content": "You are an AI trading assistant tasked with analyzing recent trading performance and current market conditions to generate insights and improvements for future trading decisions.",
             },
             {
                 "role": "user",
                 "content": f"""
-                    Recent trading data:
-                    {trades_df.to_json(orient='records')}
+                Recent trading data:
+                {trades_df.to_json(orient='records')}
 
-                    Current market data:
-                    {current_market_data}
+                Current market data:
+                {current_market_data}
 
-                    Overall performance in the last 7 days: {performance:.2f}%
+                Overall performance in the last 7 days: {performance:.2f}%
 
-                    Please analyze this data and provide:
-                    1. A brief reflection on the recent trading decisions
-                    2. Insights on what worked well and what didn't
-                    3. Suggestions for improvement in future trading decisions
-                    4. Any patterns or trends you notice in the market data
+                Please analyze this data and provide:
+                1. A brief reflection on the recent trading decisions
+                2. Insights on what worked well and what didn't
+                3. Suggestions for improvement in future trading decisions
+                4. Any patterns or trends you notice in the market data
 
-                    Limit your response to 250 words or less.
-                    """,
+                Limit your response to 250 words or less.
+                """,
             },
         ],
     )
@@ -162,45 +168,26 @@ def generate_reflection(trades_df, current_market_data):
         return None
 
 
-# 데이터프레임에 보조 지표를 추가하는 함수
-def add_indicators(df):
-    # 볼린저 밴드 추가
-    indicator_bb = ta.volatility.BollingerBands(
-        close=df["close"], window=20, window_dev=2
-    )
-    df["bb_bbm"] = indicator_bb.bollinger_mavg()
-    df["bb_bbh"] = indicator_bb.bollinger_hband()
-    df["bb_bbl"] = indicator_bb.bollinger_lband()
+def add_indicators(df, interval):
+    if interval == "minute15":
+        # 15분봉: 단기 변동성 분석
+        bb = ta.volatility.BollingerBands(close=df["close"], window=10, window_dev=2.0)
+        df["bb_bbm"] = bb.bollinger_mavg()  # 중심선
+        df["bb_bbh"] = bb.bollinger_hband()  # 상한선
+        df["bb_bbl"] = bb.bollinger_lband()  # 하한선
+        df["rsi"] = ta.momentum.RSIIndicator(close=df["close"], window=7).rsi()
 
-    # RSI (Relative Strength Index) 추가
-    df["rsi"] = ta.momentum.RSIIndicator(close=df["close"], window=14).rsi()
+    elif interval == "minute60":
+        # 1시간봉: 중기 추세 분석
+        bb = ta.volatility.BollingerBands(close=df["close"], window=20, window_dev=2.0)
+        df["bb_bbm"] = bb.bollinger_mavg()
+        df["bb_bbh"] = bb.bollinger_hband()
+        df["bb_bbl"] = bb.bollinger_lband()
+        df["rsi"] = ta.momentum.RSIIndicator(close=df["close"], window=14).rsi()
 
-    # MACD (Moving Average Convergence Divergence) 추가
-    macd = ta.trend.MACD(close=df["close"])
-    df["macd"] = macd.macd()
-    df["macd_signal"] = macd.macd_signal()
-    df["macd_diff"] = macd.macd_diff()
-
-    # 이동평균선 (단기, 장기)
-    df["sma_20"] = ta.trend.SMAIndicator(close=df["close"], window=20).sma_indicator()
-    df["ema_12"] = ta.trend.EMAIndicator(close=df["close"], window=12).ema_indicator()
-
-    # Stochastic Oscillator 추가
-    stoch = ta.momentum.StochasticOscillator(
-        high=df["high"], low=df["low"], close=df["close"], window=14, smooth_window=3
-    )
-    df["stoch_k"] = stoch.stoch()
-    df["stoch_d"] = stoch.stoch_signal()
-
-    # Average True Range (ATR) 추가
-    df["atr"] = ta.volatility.AverageTrueRange(
-        high=df["high"], low=df["low"], close=df["close"], window=14
-    ).average_true_range()
-
-    # On-Balance Volume (OBV) 추가
-    df["obv"] = ta.volume.OnBalanceVolumeIndicator(
-        close=df["close"], volume=df["volume"]
-    ).on_balance_volume()
+    elif interval == "minute240":
+        # 4시간봉: 장기 추세 분석
+        df["rsi"] = ta.momentum.RSIIndicator(close=df["close"], window=14).rsi()
 
     return df
 
@@ -220,6 +207,12 @@ def get_fear_and_greed_index():
 
 # 뉴스 데이터 가져오기
 def get_bitcoin_news():
+    current_hour = datetime.now().hour  # 현재 시간의 시(hour)를 가져옵니다.
+    # 8시, 16시, 24시에만 뉴스 데이터를 가져옵니다.
+    if current_hour not in [8, 16, 0]:  # 0은 자정(24시)
+        logger.info("Not the right time to fetch news, skipping...")
+        return []  # 뉴스 가져오지 않음
+
     serpapi_key = os.getenv("SERPAPI_API_KEY")
     if not serpapi_key:
         logger.error("SERPAPI API key is missing.")
@@ -259,19 +252,17 @@ def ai_trading():
     orderbook = pyupbit.get_orderbook("KRW-BTC")
 
     # 3. 차트 데이터 조회 및 보조지표 추가
-    df_daily = pyupbit.get_ohlcv("KRW-BTC", interval="day", count=180)
-    df_daily = dropna(df_daily)
-    df_daily = add_indicators(df_daily)
+    # 15분봉 데이터 가져오기
+    df_15min = pyupbit.get_ohlcv("KRW-BTC", interval="minute15", count=60)
+    df_15min = add_indicators(df_15min.dropna(), interval="minute15")
 
-    df_hourly = pyupbit.get_ohlcv(
-        "KRW-BTC", interval="minute60", count=168
-    )  # 7 days of hourly data
-    df_hourly = dropna(df_hourly)
-    df_hourly = add_indicators(df_hourly)
+    # 1시간봉 데이터 가져오기
+    df_hourly = pyupbit.get_ohlcv("KRW-BTC", interval="minute60", count=40)
+    df_hourly = add_indicators(df_hourly.dropna(), interval="minute60")
 
-    # 최근 데이터만 사용하도록 설정 (메모리 절약)
-    df_daily_recent = df_daily.tail(60)
-    df_hourly_recent = df_hourly.tail(48)
+    # 4시간봉 데이터 가져오기
+    df_4hour = pyupbit.get_ohlcv("KRW-BTC", interval="minute240", count=20)
+    df_4hour = add_indicators(df_4hour.dropna(), interval="minute240")
 
     # 4. 공포 탐욕 지수 가져오기
     fear_greed_index = get_fear_and_greed_index()
@@ -286,7 +277,7 @@ def ai_trading():
         return None
     try:
         # 데이터베이스 연결
-        with sqlite3.connect("../bitcoin_trades.db") as conn:
+        with sqlite3.connect("../../bitcoin_trades.db") as conn:
             # 최근 거래 내역 가져오기
             recent_trades = get_recent_trades(conn)
 
@@ -295,133 +286,119 @@ def ai_trading():
                 "fear_greed_index": fear_greed_index,
                 "news_headlines": news_headlines,
                 "orderbook": orderbook,
-                "daily_ohlcv": df_daily_recent.to_dict(),
-                "hourly_ohlcv": df_hourly_recent.to_dict(),
+                "15min_ohlcv": df_15min.to_dict(),
+                "hourly_ohlcv": df_hourly.to_dict(),
+                "4hour_ohlcv": df_4hour.to_dict(),
             }
 
             # 반성 및 개선 내용 생성
             reflection = generate_reflection(recent_trades, current_market_data)
 
+            # API 호출 간 대기 시간 추가
+            time.sleep(30)  # 10초 대기 (필요에 따라 증가 가능)
+
             # AI 모델에 반성 내용 제공
-            # Few-shot prompting으로 JSON 예시 추가
-            examples = """
-                Example Response 1:
-                {
-                "decision": "buy",
-                "percentage": 50,
-                "reason": "Based on the current market indicators and positive news, it's a good opportunity to invest."
-
-                }
-
-                Example Response 2:
-                {
-                "decision": "sell",
-                "percentage": 30,
-                "reason": "Due to negative trends in the market and high fear index, it is advisable to reduce holdings."
-
-                }
-
-                Example Response 3:
-                {
-                "decision": "hold",
-                "percentage": 0,
-                "reason": "Market indicators are neutral; it's best to wait for a clearer signal."
-
-                }
-                """
-
             response = client.chat.completions.create(
-                model="o1-preview",
+                model="gpt-4o",
                 messages=[
                     {
-                        "role": "user",
-                        "content": f"""You are an expert in Bitcoin investing. This analysis is performed every 4 hours. Analyze the provided data and determine whether to buy, sell, or hold at the current moment. Consider the following in your analysis:
+                        "role": "system",
+                        "content": f"""
+                        You are an expert in Bitcoin investing. This analysis is performed every 4 hours. Analyze the provided data and determine whether to buy, sell, or hold at the current moment. 
 
-                        - Technical indicators and market data
-                        - Recent news headlines and their potential impact on Bitcoin price
-                        - The Fear and Greed Index and its implications
-                        - Overall market sentiment
-                        - Recent trading performance and reflection
+                        Consider the following in your analysis:
+                            - The strategy focuses solely on spot trading and excludes leveraged or futures trading
+                            - The analysis should emphasize chart patterns, candlestick analysis, and trading volume, while using technical indicators like MACD, RSI, or Bollinger Bands sparingly and only when necessary to support the analysis.
+                            - **Stop-loss** should be set around 3-5% loss, and you should act quickly if losses are anticipated.
+                            - **Take-profit** should be executed when the target price or market trend changes. Realize profits by cashing out a portion of the gains to manage risk.
+                            - Maintain **mental discipline** by avoiding emotional decisions and continue gaining experience despite any losses. Focus on **consistent win rates** especially when starting with limited capital.
+                            - Operate with **position management** using **partial purchases** to spread risk, especially near key support or resistance levels. Sell portions of the position when the price movement stops to secure profits.
+                            - Adapt the strategy to changing market conditions. Avoid sticking to a particular market direction (up or down). In overbought or oversold conditions, consider **reversal signals** as potential trading opportunities.
+
+                        The following materials will be provided for your analysis:
+                            - Technical indicators and market data
+                            - Recent news headlines and their potential impact on Bitcoin price
+                            - The Fear and Greed Index and its implications
+                            - Overall market sentiment
+                            - Recent trading performance and reflection
 
                         Recent trading reflection:
                         {reflection}
 
                         Based on your analysis, make a decision and provide your reasoning.
 
-                        Please provide your response in the following JSON format:
-
-                        {examples}
+                        Response format:
+                        1. Decision (buy, sell, or hold)
+                        2. If the decision is 'buy', provide a percentage (1-100) of available KRW to use for buying.
+                        If the decision is 'sell', provide a percentage (1-100) of held BTC to sell.
+                        If the decision is 'hold', set the percentage to 0.
+                        3. Reason for your decision
 
                         Ensure that the percentage is an integer between 1 and 100 for buy/sell decisions, and exactly 0 for hold decisions.
-                        Your percentage should reflect the strength of your conviction in the decision based on the analyzed data.
-                        """,
+                        Your percentage should reflect the strength of your conviction in the decision based on the analyzed data.""",
                     },
                     {
                         "role": "user",
-                        "content": f"""Current investment status: {json.dumps(filtered_balances)}
-                            Orderbook: {json.dumps(orderbook)}
-                            Daily OHLCV with indicators (recent 60 days): {df_daily_recent.to_json()}
-                            Hourly OHLCV with indicators (recent 48 hours): {df_hourly_recent.to_json()}
-                            Recent news headlines: {json.dumps(news_headlines)}
-                            Fear and Greed Index: {json.dumps(fear_greed_index)}
-                            """,
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"""Current investment status: {json.dumps(filtered_balances)}
+                                    Orderbook: {json.dumps(orderbook)}                                
+                                    15-minute OHLCV with indicators (last 60 intervals): {df_15min.to_json()}
+                                    Hourly OHLCV with indicators (last 40 intervals): {df_hourly.to_json()}
+                                    4-hour OHLCV with indicators (last 20 intervals): {df_4hour.to_json()}
+                                    Recent news headlines: {json.dumps(news_headlines)}
+                                    Fear and Greed Index: {json.dumps(fear_greed_index)}""",
+                            },
+                        ],
                     },
                 ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "trading_decision",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "decision": {
+                                    "type": "string",
+                                    "enum": ["buy", "sell", "hold"],
+                                },
+                                "percentage": {"type": "integer"},
+                                "reason": {"type": "string"},
+                            },
+                            "required": ["decision", "percentage", "reason"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
             )
 
-            response_text = response.choices[0].message.content
-
-            # AI 응답 파싱
-            def parse_ai_response(response_text):
-                try:
-                    # Extract JSON part from the response
-                    json_match = re.search(r"\{.*?\}", response_text, re.DOTALL)
-                    if json_match:
-                        json_str = json_match.group(0)
-                        # Parse JSON
-                        parsed_json = json.loads(json_str)
-                        decision = parsed_json.get("decision")
-                        percentage = parsed_json.get("percentage")
-                        reason = parsed_json.get("reason")
-                        return {
-                            "decision": decision,
-                            "percentage": percentage,
-                            "reason": reason,
-                        }
-                    else:
-                        logger.error("No JSON found in AI response.")
-                        return None
-                except json.JSONDecodeError as e:
-                    logger.error(f"JSON parsing error: {e}")
-                    return None
-
-            parsed_response = parse_ai_response(response_text)
-            if not parsed_response:
-                logger.error("Failed to parse AI response.")
+            # Pydantic을 사용하여 AI의 트레이딩 결정 구조를 정의
+            try:
+                result = TradingDecision.model_validate_json(
+                    response.choices[0].message.content
+                )
+            except Exception as e:
+                logger.error(f"Error parsing AI response: {e}")
                 return
 
-            decision = parsed_response.get("decision")
-            percentage = parsed_response.get("percentage")
-            reason = parsed_response.get("reason")
-
-            if not decision or reason is None:
-                logger.error("Incomplete data in AI response.")
-                return
-
-            logger.info(f"AI Decision: {decision.upper()}")
-            logger.info(f"Percentage: {percentage}")
-            logger.info(f"Decision Reason: {reason}")
+            logger.info(f"AI Decision: {result.decision.upper()}")
+            logger.info(f"Decision Reason: {result.reason}")
 
             order_executed = False
 
-            if decision == "buy":
+            if result.decision == "buy":
                 my_krw = upbit.get_balance("KRW")
                 if my_krw is None:
                     logger.error("Failed to retrieve KRW balance.")
                     return
-                buy_amount = my_krw * (percentage / 100) * 0.9995  # 수수료 고려
+                buy_amount = my_krw * (result.percentage / 100) * 0.9995  # 수수료 고려
                 if buy_amount > 5000:
-                    logger.info(f"Buy Order Executed: {percentage}% of available KRW")
+                    logger.info(
+                        f"Buy Order Executed: {result.percentage}% of available KRW"
+                    )
                     try:
                         order = upbit.buy_market_order("KRW-BTC", buy_amount)
                         if order:
@@ -435,32 +412,29 @@ def ai_trading():
                     logger.warning(
                         "Buy Order Failed: Insufficient KRW (less than 5000 KRW)"
                     )
-            elif decision == "sell":
+            elif result.decision == "sell":
                 my_btc = upbit.get_balance("KRW-BTC")
                 if my_btc is None:
-                    logger.error("Failed to retrieve BTC balance.")
+                    logger.error("Failed to retrieve KRW balance.")
                     return
-                sell_amount = my_btc * (percentage / 100)
+                sell_amount = my_btc * (result.percentage / 100)
                 current_price = pyupbit.get_current_price("KRW-BTC")
                 if sell_amount * current_price > 5000:
-                    logger.info(f"Sell Order Executed: {percentage}% of held BTC")
+                    logger.info(
+                        f"Sell Order Executed: {result.percentage}% of held BTC"
+                    )
                     try:
                         order = upbit.sell_market_order("KRW-BTC", sell_amount)
                         if order:
                             order_executed = True
                         else:
-                            logger.error("Sell order failed.")
+                            logger.error("Buy order failed.")
                     except Exception as e:
                         logger.error(f"Error executing sell order: {e}")
                 else:
                     logger.warning(
                         "Sell Order Failed: Insufficient BTC (less than 5000 KRW worth)"
                     )
-            elif decision == "hold":
-                logger.info("Decision is to hold. No action taken.")
-            else:
-                logger.error("Invalid decision received from AI.")
-                return
 
             # 거래 실행 여부와 관계없이 현재 잔고 조회
             time.sleep(2)  # API 호출 제한을 고려하여 잠시 대기
@@ -494,9 +468,9 @@ def ai_trading():
             # 거래 기록을 DB에 저장하기
             log_trade(
                 conn,
-                decision,
-                percentage if order_executed else 0,
-                reason,
+                result.decision,
+                result.percentage if order_executed else 0,
+                result.reason,
                 btc_balance,
                 krw_balance,
                 btc_avg_buy_price,
@@ -515,6 +489,7 @@ if __name__ == "__main__":
     # 중복 실행 방지를 위한 변수
     trading_in_progress = False
 
+
     # 트레이딩 작업을 수행하는 함수
     def job():
         global trading_in_progress
@@ -529,17 +504,17 @@ if __name__ == "__main__":
         finally:
             trading_in_progress = False
 
-    # 테스트
+
+    ## 테스트용 바로 실행
     job()
 
-    # 매 4시간마다 실행
-    # schedule.every().day.at("00:00").do(job)
+    ## 매일 특정 시간에 실행
     # schedule.every().day.at("04:00").do(job)
     # schedule.every().day.at("08:00").do(job)
     # schedule.every().day.at("12:00").do(job)
     # schedule.every().day.at("16:00").do(job)
     # schedule.every().day.at("20:00").do(job)
-
+    # schedule.every().day.at("00:00").do(job)
     # while True:
     #     schedule.run_pending()
     #     time.sleep(1)

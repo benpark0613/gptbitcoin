@@ -1,18 +1,34 @@
-import json
-import logging
 import os
-import sqlite3
-import time
-from datetime import datetime, timedelta
-
-import pandas as pd
-import pyupbit
-import requests
-import schedule
-import ta
 from dotenv import load_dotenv
+import pyupbit
+import pandas as pd
+import json
 from openai import OpenAI
+import ta
+from ta.utils import dropna
+import time
+import requests
+import base64
+from PIL import Image
+import io
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import (
+    TimeoutException,
+    ElementClickInterceptedException,
+    WebDriverException,
+    NoSuchElementException,
+)
+import logging
+from youtube_transcript_api import YouTubeTranscriptApi
 from pydantic import BaseModel
+import sqlite3
+from datetime import datetime, timedelta
+import schedule
 
 # .env 파일에 저장된 환경 변수를 불러오기 (API 키 등)
 load_dotenv()
@@ -39,7 +55,7 @@ class TradingDecision(BaseModel):
 
 # SQLite 데이터베이스 초기화 함수 - 거래 내역을 저장할 테이블을 생성
 def init_db():
-    conn = sqlite3.connect("../bitcoin_trades.db")
+    conn = sqlite3.connect("../../bitcoin_trades.db")
     c = conn.cursor()
     c.execute(
         """CREATE TABLE IF NOT EXISTS trades
@@ -60,15 +76,15 @@ def init_db():
 
 # 거래 기록을 DB에 저장하는 함수
 def log_trade(
-        conn,
-        decision,
-        percentage,
-        reason,
-        btc_balance,
-        krw_balance,
-        btc_avg_buy_price,
-        btc_krw_price,
-        reflection="",
+    conn,
+    decision,
+    percentage,
+    reason,
+    btc_balance,
+    krw_balance,
+    btc_avg_buy_price,
+    btc_krw_price,
+    reflection="",
 ):
     c = conn.cursor()
     timestamp = datetime.now().isoformat()
@@ -109,13 +125,13 @@ def calculate_performance(trades_df):
         return 0  # 기록이 없을 경우 0%로 설정
     # 초기 잔고 계산 (KRW + BTC * 현재 가격)
     initial_balance = (
-            trades_df.iloc[-1]["krw_balance"]
-            + trades_df.iloc[-1]["btc_balance"] * trades_df.iloc[-1]["btc_krw_price"]
+        trades_df.iloc[-1]["krw_balance"]
+        + trades_df.iloc[-1]["btc_balance"] * trades_df.iloc[-1]["btc_krw_price"]
     )
     # 최종 잔고 계산
     final_balance = (
-            trades_df.iloc[0]["krw_balance"]
-            + trades_df.iloc[0]["btc_balance"] * trades_df.iloc[0]["btc_krw_price"]
+        trades_df.iloc[0]["krw_balance"]
+        + trades_df.iloc[0]["btc_balance"] * trades_df.iloc[0]["btc_krw_price"]
     )
     return (final_balance - initial_balance) / initial_balance * 100
 
@@ -131,7 +147,7 @@ def generate_reflection(trades_df, current_market_data):
 
     # OpenAI API 호출로 AI의 반성 일기 및 개선 사항 생성 요청
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-2024-08-06",
         messages=[
             {
                 "role": "system",
@@ -142,18 +158,18 @@ def generate_reflection(trades_df, current_market_data):
                 "content": f"""
                 Recent trading data:
                 {trades_df.to_json(orient='records')}
-
+                
                 Current market data:
                 {current_market_data}
-
+                
                 Overall performance in the last 7 days: {performance:.2f}%
-
+                
                 Please analyze this data and provide:
                 1. A brief reflection on the recent trading decisions
                 2. Insights on what worked well and what didn't
                 3. Suggestions for improvement in future trading decisions
                 4. Any patterns or trends you notice in the market data
-
+                
                 Limit your response to 250 words or less.
                 """,
             },
@@ -168,26 +184,28 @@ def generate_reflection(trades_df, current_market_data):
         return None
 
 
-def add_indicators(df, interval):
-    if interval == "minute15":
-        # 15분봉: 단기 변동성 분석
-        bb = ta.volatility.BollingerBands(close=df["close"], window=10, window_dev=2.0)
-        df["bb_bbm"] = bb.bollinger_mavg()  # 중심선
-        df["bb_bbh"] = bb.bollinger_hband()  # 상한선
-        df["bb_bbl"] = bb.bollinger_lband()  # 하한선
-        df["rsi"] = ta.momentum.RSIIndicator(close=df["close"], window=7).rsi()
+# 데이터프레임에 보조 지표를 추가하는 함수
+def add_indicators(df):
+    # 볼린저 밴드 추가
+    indicator_bb = ta.volatility.BollingerBands(
+        close=df["close"], window=20, window_dev=2
+    )
+    df["bb_bbm"] = indicator_bb.bollinger_mavg()
+    df["bb_bbh"] = indicator_bb.bollinger_hband()
+    df["bb_bbl"] = indicator_bb.bollinger_lband()
 
-    elif interval == "minute60":
-        # 1시간봉: 중기 추세 분석
-        bb = ta.volatility.BollingerBands(close=df["close"], window=20, window_dev=2.0)
-        df["bb_bbm"] = bb.bollinger_mavg()
-        df["bb_bbh"] = bb.bollinger_hband()
-        df["bb_bbl"] = bb.bollinger_lband()
-        df["rsi"] = ta.momentum.RSIIndicator(close=df["close"], window=14).rsi()
+    # RSI (Relative Strength Index) 추가
+    df["rsi"] = ta.momentum.RSIIndicator(close=df["close"], window=14).rsi()
 
-    elif interval == "minute240":
-        # 4시간봉: 장기 추세 분석
-        df["rsi"] = ta.momentum.RSIIndicator(close=df["close"], window=14).rsi()
+    # MACD (Moving Average Convergence Divergence) 추가
+    macd = ta.trend.MACD(close=df["close"])
+    df["macd"] = macd.macd()
+    df["macd_signal"] = macd.macd_signal()
+    df["macd_diff"] = macd.macd_diff()
+
+    # 이동평균선 (단기, 장기)
+    df["sma_20"] = ta.trend.SMAIndicator(close=df["close"], window=20).sma_indicator()
+    df["ema_12"] = ta.trend.EMAIndicator(close=df["close"], window=12).ema_indicator()
 
     return df
 
@@ -207,18 +225,12 @@ def get_fear_and_greed_index():
 
 # 뉴스 데이터 가져오기
 def get_bitcoin_news():
-    current_hour = datetime.now().hour  # 현재 시간의 시(hour)를 가져옵니다.
-    # 8시, 16시, 24시에만 뉴스 데이터를 가져옵니다.
-    if current_hour not in [8, 16, 0]:  # 0은 자정(24시)
-        logger.info("Not the right time to fetch news, skipping...")
-        return []  # 뉴스 가져오지 않음
-
     serpapi_key = os.getenv("SERPAPI_API_KEY")
     if not serpapi_key:
         logger.error("SERPAPI API key is missing.")
-        return []  # 빈 리스트 반환
+        return None  # 또는 함수 종료
     url = "https://serpapi.com/search.json"
-    params = {"engine": "google_news", "q": "bitcoin OR btc", "api_key": serpapi_key}
+    params = {"engine": "google_news", "q": "btc", "api_key": serpapi_key}
 
     try:
         response = requests.get(url, params=params)
@@ -238,6 +250,120 @@ def get_bitcoin_news():
         return []
 
 
+# 유튜브 자막 데이터 가져오기
+def get_combined_transcript(video_id):
+    try:
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=["ko"])
+        combined_text = " ".join(entry["text"] for entry in transcript)
+        return combined_text
+    except Exception as e:
+        logger.error(f"Error fetching YouTube transcript: {e}")
+        return ""
+
+
+#### Selenium 관련 함수
+def create_driver():
+    env = os.getenv("ENVIRONMENT")
+    logger.info("ChromeDriver 설정 중...")
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    try:
+        if env == "local":
+            chrome_options.add_experimental_option(
+                "excludeSwitches", ["enable-logging"]
+            )
+            from webdriver_manager.chrome import ChromeDriverManager
+
+            service = Service(ChromeDriverManager().install())
+        elif env == "ec2":
+            service = Service("/usr/bin/chromedriver")
+        else:
+            raise ValueError(f"Unsupported environment. Only local or ec2: {env}")
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        return driver
+    except Exception as e:
+        logger.error(f"ChromeDriver 생성 중 오류 발생: {e}")
+        raise
+
+
+# XPath로 Element 찾기
+def click_element_by_xpath(driver, xpath, element_name, wait_time=10):
+    try:
+        element = WebDriverWait(driver, wait_time).until(
+            EC.presence_of_element_located((By.XPATH, xpath))
+        )
+        # 요소가 뷰포트에 보일 때까지 스크롤
+        driver.execute_script("arguments[0].scrollIntoView(true);", element)
+        # 요소가 클릭 가능할 때까지 대기
+        element = WebDriverWait(driver, wait_time).until(
+            EC.element_to_be_clickable((By.XPATH, xpath))
+        )
+        element.click()
+        logger.info(f"{element_name} 클릭 완료")
+        time.sleep(2)  # 클릭 후 잠시 대기
+    except TimeoutException:
+        logger.error(f"{element_name} 요소를 찾는 데 시간이 초과되었습니다.")
+    except ElementClickInterceptedException:
+        logger.error(
+            f"{element_name} 요소를 클릭할 수 없습니다. 다른 요소에 가려져 있을 수 있습니다."
+        )
+    except NoSuchElementException:
+        logger.error(f"{element_name} 요소를 찾을 수 없습니다.")
+    except Exception as e:
+        logger.error(f"{element_name} 클릭 중 오류 발생: {e}")
+
+
+# 차트 클릭하기
+def perform_chart_actions(driver):
+    # 시간 메뉴 클릭
+    click_element_by_xpath(
+        driver,
+        "/html/body/div[1]/div[2]/div[3]/span/div/div/div[1]/div/div/cq-menu[1]",
+        "시간 메뉴",
+    )
+    # 1시간 옵션 선택
+    click_element_by_xpath(
+        driver,
+        "/html/body/div[1]/div[2]/div[3]/span/div/div/div[1]/div/div/cq-menu[1]/cq-menu-dropdown/cq-item[8]",
+        "1시간 옵션",
+    )
+    # 지표 메뉴 클릭
+    click_element_by_xpath(
+        driver,
+        "/html/body/div[1]/div[2]/div[3]/span/div/div/div[1]/div/div/cq-menu[3]",
+        "지표 메뉴",
+    )
+    # 볼린저 밴드 옵션 선택
+    click_element_by_xpath(
+        driver,
+        "/html/body/div[1]/div[2]/div[3]/span/div/div/div[1]/div/div/cq-menu[3]/cq-menu-dropdown/cq-scroll/cq-studies/cq-studies-content/cq-item[15]",
+        "볼린저 밴드 옵션",
+    )
+
+
+# 스크린샷 캡쳐 및 base64 이미지 인코딩
+def capture_and_encode_screenshot(driver):
+    try:
+        # 스크린샷 캡처
+        png = driver.get_screenshot_as_png()
+        # PIL Image로 변환
+        img = Image.open(io.BytesIO(png))
+        # 이미지가 클 경우 리사이즈 (OpenAI API 제한에 맞춤)
+        img.thumbnail((2000, 2000))
+        # 이미지를 바이트로 변환
+        buffered = io.BytesIO()
+        img.save(buffered, format="PNG")
+        # base64로 인코딩
+        base64_image = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        return base64_image
+    except Exception as e:
+        logger.error(f"스크린샷 캡처 및 인코딩 중 오류 발생: {e}")
+        return None
+
+
 ### 메인 AI 트레이딩 로직
 def ai_trading():
     global upbit
@@ -252,23 +378,47 @@ def ai_trading():
     orderbook = pyupbit.get_orderbook("KRW-BTC")
 
     # 3. 차트 데이터 조회 및 보조지표 추가
-    # 15분봉 데이터 가져오기
-    df_15min = pyupbit.get_ohlcv("KRW-BTC", interval="minute15", count=60)
-    df_15min = add_indicators(df_15min.dropna(), interval="minute15")
+    df_daily = pyupbit.get_ohlcv("KRW-BTC", interval="day", count=30)
+    df_daily = dropna(df_daily)
+    df_daily = add_indicators(df_daily)
 
-    # 1시간봉 데이터 가져오기
-    df_hourly = pyupbit.get_ohlcv("KRW-BTC", interval="minute60", count=40)
-    df_hourly = add_indicators(df_hourly.dropna(), interval="minute60")
-
-    # 4시간봉 데이터 가져오기
-    df_4hour = pyupbit.get_ohlcv("KRW-BTC", interval="minute240", count=20)
-    df_4hour = add_indicators(df_4hour.dropna(), interval="minute240")
+    df_hourly = pyupbit.get_ohlcv("KRW-BTC", interval="minute60", count=24)
+    df_hourly = dropna(df_hourly)
+    df_hourly = add_indicators(df_hourly)
 
     # 4. 공포 탐욕 지수 가져오기
     fear_greed_index = get_fear_and_greed_index()
 
     # 5. 뉴스 헤드라인 가져오기
     news_headlines = get_bitcoin_news()
+
+    # 6. YouTube 자막 데이터 가져오기
+    # youtube_transcript = get_combined_transcript("3XbtEX3jUv4")
+    f = open("strategy.txt", "r", encoding="utf-8")
+    youtube_transcript = f.read()
+    f.close()
+
+    # 7. Selenium으로 차트 캡처
+    driver = None
+    try:
+        driver = create_driver()
+        driver.get("https://upbit.com/full_chart?code=CRIX.UPBIT.KRW-BTC")
+        logger.info("페이지 로드 완료")
+        time.sleep(30)  # 페이지 로딩 대기 시간 증가
+        logger.info("차트 작업 시작")
+        perform_chart_actions(driver)
+        logger.info("차트 작업 완료")
+        chart_image = capture_and_encode_screenshot(driver)
+        logger.info(f"스크린샷 캡처 완료.")
+    except WebDriverException as e:
+        logger.error(f"캡쳐시 WebDriver 오류 발생: {e}")
+        chart_image = None
+    except Exception as e:
+        logger.error(f"차트 캡처 중 오류 발생: {e}")
+        chart_image = None
+    finally:
+        if driver:
+            driver.quit()
 
     ### AI에게 데이터 제공하고 판단 받기
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -277,7 +427,7 @@ def ai_trading():
         return None
     try:
         # 데이터베이스 연결
-        with sqlite3.connect("../bitcoin_trades.db") as conn:
+        with sqlite3.connect("../../bitcoin_trades.db") as conn:
             # 최근 거래 내역 가져오기
             recent_trades = get_recent_trades(conn)
 
@@ -286,46 +436,36 @@ def ai_trading():
                 "fear_greed_index": fear_greed_index,
                 "news_headlines": news_headlines,
                 "orderbook": orderbook,
-                "15min_ohlcv": df_15min.to_dict(),
+                "daily_ohlcv": df_daily.to_dict(),
                 "hourly_ohlcv": df_hourly.to_dict(),
-                "4hour_ohlcv": df_4hour.to_dict(),
             }
 
             # 반성 및 개선 내용 생성
             reflection = generate_reflection(recent_trades, current_market_data)
 
-            # API 호출 간 대기 시간 추가
-            time.sleep(30)  # 10초 대기 (필요에 따라 증가 가능)
-
             # AI 모델에 반성 내용 제공
             response = client.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-4o-2024-08-06",
                 messages=[
                     {
                         "role": "system",
-                        "content": f"""
-                        You are an expert in Bitcoin investing. This analysis is performed every 4 hours. Analyze the provided data and determine whether to buy, sell, or hold at the current moment. 
+                        "content": f"""You are an expert in Bitcoin investing. Analyze the provided data and determine whether to buy, sell, or hold at the current moment. Consider the following in your analysis:
 
-                        Consider the following in your analysis:
-                            - The strategy focuses solely on spot trading and excludes leveraged or futures trading
-                            - The analysis should emphasize chart patterns, candlestick analysis, and trading volume, while using technical indicators like MACD, RSI, or Bollinger Bands sparingly and only when necessary to support the analysis.
-                            - **Stop-loss** should be set around 3-5% loss, and you should act quickly if losses are anticipated.
-                            - **Take-profit** should be executed when the target price or market trend changes. Realize profits by cashing out a portion of the gains to manage risk.
-                            - Maintain **mental discipline** by avoiding emotional decisions and continue gaining experience despite any losses. Focus on **consistent win rates** especially when starting with limited capital.
-                            - Operate with **position management** using **partial purchases** to spread risk, especially near key support or resistance levels. Sell portions of the position when the price movement stops to secure profits.
-                            - Adapt the strategy to changing market conditions. Avoid sticking to a particular market direction (up or down). In overbought or oversold conditions, consider **reversal signals** as potential trading opportunities.
-
-                        The following materials will be provided for your analysis:
-                            - Technical indicators and market data
-                            - Recent news headlines and their potential impact on Bitcoin price
-                            - The Fear and Greed Index and its implications
-                            - Overall market sentiment
-                            - Recent trading performance and reflection
+                        - Technical indicators and market data
+                        - Recent news headlines and their potential impact on Bitcoin price
+                        - The Fear and Greed Index and its implications
+                        - Overall market sentiment
+                        - Patterns and trends visible in the chart image
+                        - Recent trading performance and reflection
 
                         Recent trading reflection:
                         {reflection}
 
-                        Based on your analysis, make a decision and provide your reasoning.
+                        Particularly important is to always refer to the trading method of 'Wonyyotti', a legendary Korean investor, to assess the current situation and make trading decisions. Wonyyotti's trading method is as follows:
+
+                        {youtube_transcript}
+
+                        Based on this trading method, analyze the current market situation and make a judgment by synthesizing it with the provided data and recent performance reflection.
 
                         Response format:
                         1. Decision (buy, sell, or hold)
@@ -343,12 +483,17 @@ def ai_trading():
                             {
                                 "type": "text",
                                 "text": f"""Current investment status: {json.dumps(filtered_balances)}
-                                    Orderbook: {json.dumps(orderbook)}                                
-                                    15-minute OHLCV with indicators (last 60 intervals): {df_15min.to_json()}
-                                    Hourly OHLCV with indicators (last 40 intervals): {df_hourly.to_json()}
-                                    4-hour OHLCV with indicators (last 20 intervals): {df_4hour.to_json()}
-                                    Recent news headlines: {json.dumps(news_headlines)}
-                                    Fear and Greed Index: {json.dumps(fear_greed_index)}""",
+                Orderbook: {json.dumps(orderbook)}
+                Daily OHLCV with indicators (30 days): {df_daily.to_json()}
+                Hourly OHLCV with indicators (24 hours): {df_hourly.to_json()}
+                Recent news headlines: {json.dumps(news_headlines)}
+                Fear and Greed Index: {json.dumps(fear_greed_index)}""",
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{chart_image}"
+                                },
                             },
                         ],
                     },
@@ -373,6 +518,7 @@ def ai_trading():
                         },
                     },
                 },
+                max_tokens=4095,
             )
 
             # Pydantic을 사용하여 AI의 트레이딩 결정 구조를 정의
@@ -489,7 +635,6 @@ if __name__ == "__main__":
     # 중복 실행 방지를 위한 변수
     trading_in_progress = False
 
-
     # 트레이딩 작업을 수행하는 함수
     def job():
         global trading_in_progress
@@ -504,16 +649,12 @@ if __name__ == "__main__":
         finally:
             trading_in_progress = False
 
-
     ## 테스트용 바로 실행
     job()
 
-    ## 매일 특정 시간에 실행
-    # schedule.every().day.at("04:00").do(job)
+    ## 매일 특정 시간(예: 오전 9시, 오후 3시, 오후 9시)에 실행
     # schedule.every().day.at("08:00").do(job)
-    # schedule.every().day.at("12:00").do(job)
     # schedule.every().day.at("16:00").do(job)
-    # schedule.every().day.at("20:00").do(job)
     # schedule.every().day.at("00:00").do(job)
     # while True:
     #     schedule.run_pending()
