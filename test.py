@@ -1,83 +1,121 @@
-import logging
 import os
-import json
-import pyupbit
-import shutil
-from dotenv import load_dotenv
-from ta.utils import dropna
-from datetime import datetime  # 날짜 및 시간 처리를 위한 모듈
+import csv
+import requests
+from bs4 import BeautifulSoup
+from datetime import datetime
 
-# .env 파일에 저장된 환경 변수를 불러오기 (API 키 등)
-load_dotenv()
+def generate_url(query, start=0, date_filter='m'):
+    """
+    Google 뉴스 검색 URL 생성 함수.
+    date_filter='m'일 경우 지난 1개월, 'w'는 1주, 'd'는 24시간.
+    """
+    base_url = "https://www.google.com/search"
+    params = {
+        "q": query,
+        "gl": "us",     # 미국 기반 검색
+        "tbm": "nws",   # 뉴스 검색
+        "start": start,
+        # tbs=qdr:m  => 지난 한 달
+        # tbs=qdr:w  => 지난 한 주
+        # tbs=qdr:d  => 지난 24시간
+        "tbs": f"qdr:{date_filter}"
+    }
+    return f"{base_url}?{'&'.join([f'{key}={value}' for key, value in params.items()])}"
 
-# 로깅 설정
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+def get_news_on_page(url):
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        )
+    }
+    response = requests.get(url, headers=headers)
+    soup = BeautifulSoup(response.content, "html.parser")
 
-# Upbit 객체 생성
-access = os.getenv("UPBIT_ACCESS_KEY")
-secret = os.getenv("UPBIT_SECRET_KEY")
-if not access or not secret:
-    logger.error("API keys not found. Please check your .env file.")
-    raise ValueError("Missing API keys. Please check your .env file.")
-upbit = pyupbit.Upbit(access, secret)
+    articles = soup.select("div.SoaBEf")
+    page_results = []
+    for el in articles:
+        link_el = el.find("a")
+        link = link_el.get("href", "") if link_el else "N/A"
 
-# 현재 시간 타임스탬프 생성
-timestamp = datetime.now().strftime("%Y%m%d%H%M")
+        title_el = el.select_one("div.MBeuO")
+        title = title_el.get_text(strip=True) if title_el else "N/A"
 
-# chartdata_csv 폴더 명 정의
-output_dir = "chartdata_csv"
+        snippet_el = el.select_one(".GI74Re")
+        snippet = snippet_el.get_text(strip=True) if snippet_el else "N/A"
 
-# 폴더 자체를 삭제
-if os.path.exists(output_dir):
-    shutil.rmtree(output_dir)
+        date_el = el.select_one(".LfVVr")
+        date = date_el.get_text(strip=True) if date_el else "N/A"
 
-# 다시 폴더 생성
-os.makedirs(output_dir, exist_ok=True)
+        source_el = el.select_one(".NUnG9d span")
+        source = source_el.get_text(strip=True) if source_el else "N/A"
 
-### 데이터 가져오기
-all_balances = upbit.get_balances()
-filtered_balances = [
-    balance for balance in all_balances if balance["currency"] in ["BTC", "KRW"]
-]
+        page_results.append({
+            "link": link,
+            "title": title,
+            "snippet": snippet,
+            "date": date,
+            "source": source
+        })
+    return page_results
 
-orderbook = pyupbit.get_orderbook("KRW-BTC")
+def get_news_data(query, num_results=10, date_filter='m'):
+    """
+    최대 num_results개를 모을 때까지 페이지를 넘겨가며 뉴스를 수집.
+    지난 date_filter 기간을 제한(qdr:m => 1개월).
+    """
+    collected_results = []
+    start = 0
 
-# 15분봉, 1시간봉, 4시간봉
-df_15min = pyupbit.get_ohlcv("KRW-BTC", interval="minute15", count=2880)
-df_15min = dropna(df_15min)
+    while len(collected_results) < num_results:
+        url = generate_url(query, start, date_filter=date_filter)
+        page_data = get_news_on_page(url)
+        if not page_data:
+            # 더 이상 결과가 없으면 중단
+            break
+        collected_results.extend(page_data)
+        start += 10  # 다음 페이지로 이동
 
-df_hourly = pyupbit.get_ohlcv("KRW-BTC", interval="minute60", count=10000)
-df_hourly = dropna(df_hourly)
+    return collected_results[:num_results]
 
-df_4hour = pyupbit.get_ohlcv("KRW-BTC", interval="minute240", count=2500)
-df_4hour = dropna(df_4hour)
+def create_folders():
+    base_folder = "trade_report"
+    if not os.path.exists(base_folder):
+        os.makedirs(base_folder)
 
-# 데이터프레임 정렬 (최신 날짜가 위로 오도록)
-df_15min = df_15min.sort_index(ascending=False)
-df_hourly = df_hourly.sort_index(ascending=False)
-df_4hour = df_4hour.sort_index(ascending=False)
+    today_date = datetime.now().strftime("%Y%m%d")
+    date_folder = os.path.join(base_folder, today_date)
+    if not os.path.exists(date_folder):
+        os.makedirs(date_folder)
 
-# CSV로 저장
-fifteen_min_file_path = os.path.join(output_dir, f"{timestamp}_15min.csv")
-df_15min.to_csv(fifteen_min_file_path, index=True)
-print(f"15분봉 CSV 파일이 저장되었습니다: {fifteen_min_file_path}")
+    current_time = datetime.now().strftime("%H%M%S")
+    time_folder = os.path.join(date_folder, current_time)
+    if not os.path.exists(time_folder):
+        os.makedirs(time_folder)
 
-hourly_file_path = os.path.join(output_dir, f"{timestamp}_hourly.csv")
-df_hourly.to_csv(hourly_file_path, index=True)
-print(f"1시간봉 CSV 파일이 저장되었습니다: {hourly_file_path}")
+    return time_folder
 
-four_hour_file_path = os.path.join(output_dir, f"{timestamp}_4hour.csv")
-df_4hour.to_csv(four_hour_file_path, index=True)
-print(f"4시간봉 CSV 파일이 저장되었습니다: {four_hour_file_path}")
+def save_to_csv(data, folder_path):
+    csv_path = os.path.join(folder_path, "news_results.csv")
+    with open(csv_path, mode="w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=["title", "link", "snippet", "date", "source"]
+        )
+        writer.writeheader()
+        writer.writerows(data)
 
-# Balances와 Orderbook 데이터를 텍스트 파일로 저장
-balances_orderbook_file_path = os.path.join(output_dir, f"{timestamp}_balances_orderbook.txt")
-with open(balances_orderbook_file_path, "w", encoding="utf-8") as file:
-    file.write("=== 현재 투자 상태 (Balances) ===\n")
-    json.dump(all_balances, file, ensure_ascii=False, indent=4)
-    file.write("\n\n")
-    file.write("=== 오더북 데이터 (Orderbook) ===\n")
-    json.dump(orderbook, file, ensure_ascii=False, indent=4)
+if __name__ == "__main__":
+    query = "BTC OR Bitcoin"
+    num_results = 10
+    date_filter = 'w'  # 'm' => 지난 1개월
 
-print(f"Balances와 Orderbook 데이터가 텍스트 파일에 저장되었습니다: {balances_orderbook_file_path}")
+    # 기간을 제한하여 뉴스 데이터 크롤링
+    news_data = get_news_data(query, num_results, date_filter)
+
+    # 폴더 생성
+    output_folder = create_folders()
+
+    # CSV 저장
+    save_to_csv(news_data, output_folder)
+    print(f"크롤링 데이터가 {output_folder}에 저장되었습니다.")
