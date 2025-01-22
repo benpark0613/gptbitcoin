@@ -162,11 +162,11 @@ if __name__ == "__main__":
     orderbook = binance_client.get_order_book(symbol="TRUMPUSDT")
 
     # OHLCV 데이터 수집 및 저장
-    save_ohlcv_to_csv("TRUMPUSDT", Client.KLINE_INTERVAL_15MINUTE, output_folder, limit=500)
-    save_ohlcv_to_csv("TRUMPUSDT", Client.KLINE_INTERVAL_1HOUR, output_folder, limit=500)
-    save_ohlcv_to_csv("TRUMPUSDT", Client.KLINE_INTERVAL_4HOUR, output_folder, limit=500)
-    save_ohlcv_to_csv("TRUMPUSDT", Client.KLINE_INTERVAL_1DAY, output_folder, limit=500)
-    save_ohlcv_to_csv("TRUMPUSDT", Client.KLINE_INTERVAL_1WEEK, output_folder, limit=500)
+    save_ohlcv_to_csv("TRUMPUSDT", Client.KLINE_INTERVAL_5MINUTE, output_folder, limit=1000)
+    save_ohlcv_to_csv("TRUMPUSDT", Client.KLINE_INTERVAL_15MINUTE, output_folder, limit=1000)
+    save_ohlcv_to_csv("TRUMPUSDT", Client.KLINE_INTERVAL_1HOUR, output_folder, limit=1000)
+    save_ohlcv_to_csv("TRUMPUSDT", Client.KLINE_INTERVAL_4HOUR, output_folder, limit=1000)
+    save_ohlcv_to_csv("TRUMPUSDT", Client.KLINE_INTERVAL_1DAY, output_folder, limit=1000)
 
     # Balances, Orderbook 분리 저장
     balances_file = os.path.join(output_folder, "balances.json")
