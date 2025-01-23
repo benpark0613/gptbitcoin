@@ -163,6 +163,24 @@ def save_news_to_csv(data, folder_path):
         writer.writerows(data)
     logger.info(f"Google News data saved to {csv_path}")
 
+# ============== (6) 미체결 주문 조회 및 저장 함수 ==============
+def save_open_orders_to_txt(folder_path):
+    """
+    업비트 미체결 주문 조회 및 텍스트 파일로 저장
+    """
+    try:
+        open_orders = upbit.get_order("KRW-BTC")  # BTC 마켓의 미체결 주문 가져오기
+        if not open_orders:
+            logger.info("No open orders found.")
+            return
+
+        orders_file = os.path.join(folder_path, "open_orders.txt")
+        with open(orders_file, "w", encoding="utf-8") as file:
+            file.write("=== 미체결 주문 (Open Orders) ===\n")
+            json.dump(open_orders, file, ensure_ascii=False, indent=4)
+        logger.info(f"Open orders saved to {orders_file}")
+    except Exception as e:
+        logger.error(f"Error fetching or saving open orders: {e}")
 
 # ============== (5) 메인 실행부 ==============
 if __name__ == "__main__":
@@ -203,6 +221,9 @@ if __name__ == "__main__":
         json.dump(orderbook, of, ensure_ascii=False, indent=4)
         logger.info(f"Orderbook saved to {orderbook_file}")
 
+    # 6) 미체결 주문 조회 및 저장
+    save_open_orders_to_txt(output_folder)
+
     # 6) 구글 뉴스 크롤링
     query = "BTC OR Bitcoin"
     num_results = 10
@@ -213,5 +234,7 @@ if __name__ == "__main__":
     # 7) 공포 탐욕지수 조회 및 저장
     fear_greed_index = requests.get("https://api.alternative.me/fng/?limit=7").json().get('data', [])
     save_fng_to_csv(fear_greed_index, output_folder)
+
+
 
     print("스크립트가 정상적으로 완료되었습니다.")
