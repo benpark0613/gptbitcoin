@@ -1,9 +1,37 @@
-import os
 import csv
-import requests
-from bs4 import BeautifulSoup
+import logging
+import os
 from datetime import datetime
 
+import requests
+from bs4 import BeautifulSoup
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# ============== 폴더 생성 함수 ==============
+def create_folders(base_folder_name="test_report"):
+    """
+    기본 베이스 폴더(trade_report) / 날짜 폴더 / 시간 폴더 구조를 생성하고
+    최종적으로 저장할 time_folder 경로를 반환
+    """
+    base_folder = base_folder_name
+    if not os.path.exists(base_folder):
+        os.makedirs(base_folder)
+
+    today_date = datetime.now().strftime("%Y%m%d")
+    date_folder = os.path.join(base_folder, today_date)
+    if not os.path.exists(date_folder):
+        os.makedirs(date_folder)
+
+    current_time = datetime.now().strftime("%H%M%S")
+    time_folder = os.path.join(date_folder, current_time)
+    if not os.path.exists(time_folder):
+        os.makedirs(time_folder)
+
+    return time_folder
+
+# ============== 구글 뉴스 크롤링 관련 함수 ==============
 def generate_url(query, start=0, date_filter='m'):
     """
     Google 뉴스 검색 URL 생성 함수.
@@ -15,12 +43,10 @@ def generate_url(query, start=0, date_filter='m'):
         "gl": "us",     # 미국 기반 검색
         "tbm": "nws",   # 뉴스 검색
         "start": start,
-        # tbs=qdr:m  => 지난 한 달
-        # tbs=qdr:w  => 지난 한 주
-        # tbs=qdr:d  => 지난 24시간
         "tbs": f"qdr:{date_filter}"
     }
     return f"{base_url}?{'&'.join([f'{key}={value}' for key, value in params.items()])}"
+
 
 def get_news_on_page(url):
     headers = {
@@ -59,6 +85,7 @@ def get_news_on_page(url):
         })
     return page_results
 
+
 def get_news_data(query, num_results=10, date_filter='m'):
     """
     최대 num_results개를 모을 때까지 페이지를 넘겨가며 뉴스를 수집.
@@ -78,25 +105,12 @@ def get_news_data(query, num_results=10, date_filter='m'):
 
     return collected_results[:num_results]
 
-def create_folders():
-    base_folder = "trade_report"
-    if not os.path.exists(base_folder):
-        os.makedirs(base_folder)
 
-    today_date = datetime.now().strftime("%Y%m%d")
-    date_folder = os.path.join(base_folder, today_date)
-    if not os.path.exists(date_folder):
-        os.makedirs(date_folder)
-
-    current_time = datetime.now().strftime("%H%M%S")
-    time_folder = os.path.join(date_folder, current_time)
-    if not os.path.exists(time_folder):
-        os.makedirs(time_folder)
-
-    return time_folder
-
-def save_to_csv(data, folder_path):
-    csv_path = os.path.join(folder_path, "news_results.csv")
+def save_news_to_csv(data, folder_path):
+    """
+    구글 뉴스 데이터를 CSV로 저장
+    """
+    csv_path = os.path.join(folder_path, "google_news.csv")
     with open(csv_path, mode="w", newline="", encoding="utf-8") as csv_file:
         writer = csv.DictWriter(
             csv_file,
@@ -104,18 +118,15 @@ def save_to_csv(data, folder_path):
         )
         writer.writeheader()
         writer.writerows(data)
+    logger.info(f"Google News data saved to {csv_path}")
 
+# ============== 메인 실행부 ==============
 if __name__ == "__main__":
-    query = "BTC OR Bitcoin"
-    num_results = 10
-    date_filter = 'w'  # 'm' => 지난 1개월
-
-    # 기간을 제한하여 뉴스 데이터 크롤링
-    news_data = get_news_data(query, num_results, date_filter)
-
-    # 폴더 생성
     output_folder = create_folders()
 
-    # CSV 저장
-    save_to_csv(news_data, output_folder)
-    print(f"크롤링 데이터가 {output_folder}에 저장되었습니다.")
+    # 구글 뉴스 크롤링
+    query = "BTC OR Bitcoin"
+    num_results = 10
+    date_filter = 'w'  # 'w' => 지난 1주간
+    news_data = get_news_data(query, num_results, date_filter)
+    save_news_to_csv(news_data, output_folder)

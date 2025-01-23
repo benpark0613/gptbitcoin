@@ -174,18 +174,18 @@ if __name__ == "__main__":
     orderbook = pyupbit.get_orderbook("KRW-BTC")
 
     # 3) OHLCV 데이터 수집
-    df_15min = dropna(pyupbit.get_ohlcv("KRW-BTC", interval="minute15", count=2880)).sort_index(ascending=False)
+    # df_15min = dropna(pyupbit.get_ohlcv("KRW-BTC", interval="minute15", count=2880)).sort_index(ascending=False)
     df_hourly = dropna(pyupbit.get_ohlcv("KRW-BTC", interval="minute60", count=5000)).sort_index(ascending=False)
     df_4hour = dropna(pyupbit.get_ohlcv("KRW-BTC", interval="minute240", count=2500)).sort_index(ascending=False)
     df_daily = dropna(pyupbit.get_ohlcv("KRW-BTC", interval="day", count=1460)).sort_index(ascending=False)
-    df_weekly = dropna(pyupbit.get_ohlcv("KRW-BTC", interval="week", count=208)).sort_index(ascending=False)
+    # df_weekly = dropna(pyupbit.get_ohlcv("KRW-BTC", interval="week", count=208)).sort_index(ascending=False)
 
     # 4) CSV 저장 (시세 데이터)
-    save_dataframe_to_csv(df_15min, "15m.csv", output_folder)
+    # save_dataframe_to_csv(df_15min, "15m.csv", output_folder)
     save_dataframe_to_csv(df_hourly, "1h.csv", output_folder)
     save_dataframe_to_csv(df_4hour, "4h.csv", output_folder)
     save_dataframe_to_csv(df_daily, "1d.csv", output_folder)
-    save_dataframe_to_csv(df_weekly, "1w.csv", output_folder)
+    # save_dataframe_to_csv(df_weekly, "1w.csv", output_folder)
 
     # 5) Balances, Orderbook 분리 저장
     balances_file = os.path.join(output_folder, "balances.txt")
