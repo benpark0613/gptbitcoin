@@ -3,6 +3,7 @@ import os
 import json
 import csv
 import pandas as pd
+import pytz
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -52,9 +53,14 @@ def save_ohlcv_to_csv(symbol, interval, folder_path, limit=500):
     klines = binance_client.futures_klines(symbol=symbol, interval=interval, limit=limit)
 
     data = []
+    kst_timezone = pytz.timezone('Asia/Seoul')  # KST 시간대 정의
+
     for row in klines:
         # row[0] -> 밀리초 단위의 타임스탬프
-        timestamp_str = datetime.utcfromtimestamp(row[0] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+        utc_timestamp = datetime.utcfromtimestamp(row[0] / 1000).replace(tzinfo=pytz.utc)  # UTC 기준
+        kst_timestamp = utc_timestamp.astimezone(kst_timezone)  # KST 변환
+        timestamp_str = kst_timestamp.strftime('%Y-%m-%d %H:%M:%S')  # KST 시간 문자열
+
         data.append([
             timestamp_str,
             row[1],  # open
