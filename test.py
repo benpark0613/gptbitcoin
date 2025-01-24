@@ -28,7 +28,7 @@ if not access or not secret:
 
 client = Client(access, secret)
 
-
+# ============== (2) 폴더 생성 함수 ==============
 def create_folders(base_folder_name="futures_BTCUSDT_report"):
     if not os.path.exists(base_folder_name):
         os.makedirs(base_folder_name)
@@ -41,21 +41,18 @@ def create_folders(base_folder_name="futures_BTCUSDT_report"):
                 os.rmdir(file_path)
     return base_folder_name
 
-
+# ============== (3) CSV 저장 함수들 ==============
 def save_dataframe_to_csv(dataframe, full_filename, folder_path):
     file_path = os.path.join(folder_path, full_filename)
     dataframe.to_csv(file_path, index=True, index_label="timestamp")
     logger.info(f"{full_filename} saved to {folder_path}")
 
-
-def save_fng_to_csv(fear_greed_index, folder_path, timestamp_prefix=None):
+def save_fng_to_csv(fear_greed_index, folder_path):
     if not fear_greed_index:
         logger.warning("No fear_greed_index data available to save.")
         return
 
-    if not timestamp_prefix:
-        timestamp_prefix = datetime.now().strftime("%y%m%d%H%M")
-
+    timestamp_prefix = datetime.now().strftime("%y%m%d%H%M")
     filename_with_prefix = f"{timestamp_prefix}_fear_greed_index.csv"
     csv_filename = os.path.join(folder_path, filename_with_prefix)
 
@@ -65,10 +62,9 @@ def save_fng_to_csv(fear_greed_index, folder_path, timestamp_prefix=None):
         writer.writeheader()
         for row in fear_greed_index:
             writer.writerow(row)
-
     logger.info(f"{filename_with_prefix} saved to {folder_path}")
 
-
+# ============== (4) 날짜 파싱 함수 (뉴스용) ==============
 def parse_date_str(date_str):
     if not date_str:
         return datetime.now()
@@ -94,7 +90,7 @@ def parse_date_str(date_str):
 
     return datetime.now()
 
-
+# ============== (5) 구글 뉴스 크롤링 ==============
 def generate_url(query, start=0, date_filter=None):
     base_url = "https://www.google.com/search"
     params = {"q": query, "gl": "us", "tbm": "nws", "start": start}
@@ -102,7 +98,6 @@ def generate_url(query, start=0, date_filter=None):
         params["tbs"] = f"qdr:{date_filter}"
     query_string = "&".join([f"{k}={v}" for k, v in params.items()])
     return f"{base_url}?{query_string}"
-
 
 def get_news_on_page(url):
     headers = {
@@ -135,7 +130,6 @@ def get_news_on_page(url):
         })
     return page_results
 
-
 def get_news_data(query, num_results=10, date_filter=None):
     collected_results = []
     start = 0
@@ -148,11 +142,8 @@ def get_news_data(query, num_results=10, date_filter=None):
         start += 10
     return collected_results[:num_results]
 
-
-def save_news_to_csv(data, folder_path, timestamp_prefix=None):
-    if not timestamp_prefix:
-        timestamp_prefix = datetime.now().strftime("%y%m%d%H%M")
-
+def save_news_to_csv(data, folder_path):
+    timestamp_prefix = datetime.now().strftime("%y%m%d%H%M")
     filename_with_prefix = f"{timestamp_prefix}_google_news.csv"
     csv_path = os.path.join(folder_path, filename_with_prefix)
 
@@ -167,17 +158,15 @@ def save_news_to_csv(data, folder_path, timestamp_prefix=None):
 
     logger.info(f"{filename_with_prefix} saved to {folder_path}")
 
-
-def retrieve_and_save_google_news(output_folder, query="Bitcoin", total_results=50, top_n=10, timestamp_prefix=None):
+def retrieve_and_save_google_news(output_folder, query="Bitcoin", total_results=50, top_n=10):
     news_data_raw = get_news_data(query, num_results=total_results)
     for item in news_data_raw:
         item["parsed_dt"] = parse_date_str(item["date"])
     news_sorted = sorted(news_data_raw, key=lambda x: x["parsed_dt"], reverse=True)
     latest_n_news = news_sorted[:top_n]
+    save_news_to_csv(latest_n_news, output_folder)
 
-    save_news_to_csv(latest_n_news, output_folder, timestamp_prefix=timestamp_prefix)
-
-
+# ============== (6) 바이낸스 선물: 잔고 & 오더북 조회 함수 예시 ==============
 def fetch_futures_balance():
     try:
         futures_balance = client.futures_account_balance()
@@ -186,7 +175,6 @@ def fetch_futures_balance():
     except Exception as e:
         logger.error(f"잔고 조회 에러: {e}")
         return []
-
 
 def fetch_futures_orderbook(symbol="BTCUSDT", limit=20):
     try:
@@ -197,10 +185,9 @@ def fetch_futures_orderbook(symbol="BTCUSDT", limit=20):
         logger.error(f"오더북 조회 에러: {e}")
         return {}
 
-
-def save_balance_and_orderbook(balances, orderbook, folder_path, timestamp_prefix=None):
-    if not timestamp_prefix:
-        timestamp_prefix = datetime.now().strftime("%y%m%d%H%M")
+# ============== (7) [통합] 잔고와 오더북 저장 함수 ==============
+def save_balance_and_orderbook(balances, orderbook, folder_path):
+    timestamp_prefix = datetime.now().strftime("%y%m%d%H%M")
 
     balances_filename = f"{timestamp_prefix}_balances.txt"
     balances_file = os.path.join(folder_path, balances_filename)
@@ -216,21 +203,32 @@ def save_balance_and_orderbook(balances, orderbook, folder_path, timestamp_prefi
 
     logger.info(f"{balances_filename} / {orderbook_filename} saved to {folder_path}")
 
+# ============== (7-1) OHLCV 여러 interval에 대해 한꺼번에 조회 + CSV 저장 (Binance 예시) ==============
+def fetch_and_save_ohlcv(symbol, output_folder, intervals):
+    """
+    Binance 선물 K라인을 KST로 변환하여 저장합니다.
+    intervals 예시: [{"interval": "1m", "limit": 50}, ...]
+    """
+    import pandas as pd
+    import pytz
 
-def fetch_and_save_ohlcv(symbol, output_folder, intervals, timestamp_prefix=None):
     kst = pytz.timezone('Asia/Seoul')
-
-    if not timestamp_prefix:
-        timestamp_prefix = datetime.now().strftime("%y%m%d%H%M")
 
     for setting in intervals:
         interval_name = setting.get("interval", "1m")
         limit_value = setting.get("limit", 500)
 
-        csv_filename = f"{timestamp_prefix}_{interval_name}.csv"
+        # YYYYMMDD_interval.csv 예: 20250124_1m.csv
+        today_str = datetime.now().strftime("%Y%m%d")
+        csv_filename = f"{today_str}_{interval_name}.csv"
 
         try:
             klines = client.futures_klines(symbol=symbol, interval=interval_name, limit=limit_value)
+            # klines 예시:
+            # [
+            #   [ 1499040000000, "0.01634790", "0.80000000", ... ],
+            #   ...
+            # ]
 
             df = pd.DataFrame(klines, columns=[
                 "open_time", "open", "high", "low", "close", "volume",
@@ -238,128 +236,57 @@ def fetch_and_save_ohlcv(symbol, output_folder, intervals, timestamp_prefix=None
                 "taker_base_volume", "taker_quote_volume", "ignore"
             ])
 
+            # 1) UTC 기준 datetime 변환
+            #    => to_datetime(..., utc=True)를 사용해 'UTC'를 명시
             df["open_time"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
+
+            # 2) UTC → KST 변환
             df["open_time"] = df["open_time"].dt.tz_convert(kst)
+
+            # 3) 인덱스로 설정
             df.set_index("open_time", inplace=True)
+
+            # 4) 정렬: 최신이 위로 오게
             df.sort_index(ascending=False, inplace=True)
 
+            # CSV 저장
             save_dataframe_to_csv(df, csv_filename, output_folder)
 
         except Exception as e:
             logger.error(f"Error fetching OHLCV for {symbol} - {interval_name}: {e}")
 
-
-# ============== (새로 추가) 선물 포지션, 오픈 오더 조회 및 CSV 저장 ==============
-def fetch_futures_positions():
-    """
-    선물 포지션(positions) 정보를 가져옵니다.
-    python-binance: client.futures_position_information()
-    """
-    try:
-        positions = client.futures_position_information()
-        logger.info("선물 포지션 정보를 성공적으로 조회했습니다.")
-        return positions
-    except Exception as e:
-        logger.error(f"포지션 조회 에러: {e}")
-        return []
-
-
-def fetch_futures_open_orders(symbol=None):
-    """
-    선물 오픈 오더(open orders) 정보를 가져옵니다.
-    python-binance: client.futures_get_open_orders(symbol=...)
-    symbol을 지정하지 않으면 전체 오픈 오더 조회.
-    """
-    try:
-        open_orders = client.futures_get_open_orders(symbol=symbol) if symbol else client.futures_get_open_orders()
-        logger.info("선물 오픈 오더를 성공적으로 조회했습니다.")
-        return open_orders
-    except Exception as e:
-        logger.error(f"오픈 오더 조회 에러: {e}")
-        return []
-
-
-def save_positions_to_csv(positions, folder_path, timestamp_prefix=None):
-    """
-    선물 포지션 정보를 CSV로 저장합니다.
-    """
-    if not timestamp_prefix:
-        timestamp_prefix = datetime.now().strftime("%y%m%d%H%M")
-
-    if not positions:
-        logger.warning("No positions to save.")
-        return
-
-    csv_filename = f"{timestamp_prefix}_futures_positions.csv"
-    csv_path = os.path.join(folder_path, csv_filename)
-
-    df = pd.DataFrame(positions)
-    df.to_csv(csv_path, index=False, encoding="utf-8")
-    logger.info(f"{csv_filename} saved to {folder_path}")
-
-
-def save_open_orders_to_csv(open_orders, folder_path, timestamp_prefix=None):
-    """
-    선물 오픈 오더 정보를 CSV로 저장합니다.
-    """
-    if not timestamp_prefix:
-        timestamp_prefix = datetime.now().strftime("%y%m%d%H%M")
-
-    if not open_orders:
-        logger.warning("No open orders to save.")
-        return
-
-    csv_filename = f"{timestamp_prefix}_futures_open_orders.csv"
-    csv_path = os.path.join(folder_path, csv_filename)
-
-    df = pd.DataFrame(open_orders)
-    df.to_csv(csv_path, index=False, encoding="utf-8")
-    logger.info(f"{csv_filename} saved to {folder_path}")
-
-
 # ============== (8) 메인 실행부 ==============
 if __name__ == "__main__":
-    common_timestamp_prefix = datetime.now().strftime("%y%m%d%H%M")
-
     output_folder = create_folders("futures_BTCUSDT_report")
 
+    # 1) 잔고 & 오더북 수집 및 저장
     futures_balance = fetch_futures_balance()
-    orderbook = fetch_futures_orderbook(symbol="BTCUSDT", limit=100)
-    save_balance_and_orderbook(
-        futures_balance,
-        orderbook,
-        output_folder,
-        timestamp_prefix=common_timestamp_prefix
-    )
+    orderbook = fetch_futures_orderbook(symbol="BTCUSDT", limit=20)
+    save_balance_and_orderbook(futures_balance, orderbook, output_folder)
 
-    # 기존 OHLCV intervals 예시
+    # 2) OHLCV intervals 정의
     my_intervals = [
-        {"interval": Client.KLINE_INTERVAL_1MINUTE, "limit": 200},
-        {"interval": Client.KLINE_INTERVAL_5MINUTE, "limit": 150},
-        {"interval": Client.KLINE_INTERVAL_15MINUTE, "limit": 100},
-        {"interval": Client.KLINE_INTERVAL_1HOUR, "limit": 120},
-        {"interval": Client.KLINE_INTERVAL_4HOUR, "limit": 100},
-        {"interval": Client.KLINE_INTERVAL_1DAY, "limit": 200}
+        {"interval": Client.KLINE_INTERVAL_1MINUTE, "limit": 50},  # 1분봉
+        {"interval": Client.KLINE_INTERVAL_5MINUTE, "limit": 50},  # 5분봉
+        {"interval": Client.KLINE_INTERVAL_15MINUTE, "limit": 50},  # 15분봉
+        {"interval": Client.KLINE_INTERVAL_1HOUR, "limit": 50},  # 1시간봉
+        {"interval": Client.KLINE_INTERVAL_4HOUR, "limit": 50},  # 4시간봉
+        {"interval": Client.KLINE_INTERVAL_1DAY, "limit": 50}  # 1일봉
     ]
-    fetch_and_save_ohlcv("BTCUSDT", output_folder, my_intervals, timestamp_prefix=common_timestamp_prefix)
+    # 3) OHLCV 수집 + CSV 저장 (KST 변환 반영)
+    fetch_and_save_ohlcv("BTCUSDT", output_folder, my_intervals)
 
+    # 4) 구글 뉴스 크롤링
     retrieve_and_save_google_news(
         output_folder,
         query="Bitcoin",
         total_results=30,
-        top_n=10,
-        timestamp_prefix=common_timestamp_prefix
+        top_n=10
     )
 
+    # 5) 공포 탐욕 지수 조회 및 저장
     fear_greed_index = requests.get("https://api.alternative.me/fng/?limit=7").json().get("data", [])
-    save_fng_to_csv(fear_greed_index, output_folder, timestamp_prefix=common_timestamp_prefix)
-
-    # **추가: 선물 포지션 / 오픈 오더 조회 및 CSV 저장**
-    positions = fetch_futures_positions()
-    save_positions_to_csv(positions, output_folder, timestamp_prefix=common_timestamp_prefix)
-
-    open_orders = fetch_futures_open_orders(symbol=None)  # 심볼 지정 시 symbol="BTCUSDT"
-    save_open_orders_to_csv(open_orders, output_folder, timestamp_prefix=common_timestamp_prefix)
+    save_fng_to_csv(fear_greed_index, output_folder)
 
     logger.info("바이낸스 선물 리포트 스크립트가 정상적으로 완료되었습니다.")
     print("스크립트가 정상적으로 완료되었습니다.")

@@ -11,7 +11,7 @@ import streamlit as st
 # 1) DB 연결 및 DataFrame 로드
 # ==============================
 def get_connection():
-    return sqlite3.connect('bitcoin_trades.db')
+    return sqlite3.connect('../../bitcoin_trades.db')
 
 
 def load_data():
