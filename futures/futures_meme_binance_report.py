@@ -615,7 +615,7 @@ def main():
     # [사용자가 컨트롤할 수 있는 부분들]
     symbol = "VINEUSDT"  # 심볼
     orderbook_limit = 100  # 오더북 개수 제한
-    google_query_keyword = "vine coin"  # 구글뉴스 검색어
+    google_query_keyword = "VINE coin"  # 구글뉴스 검색어
     intervals_for_ohlcv = [
         {"interval": Client.KLINE_INTERVAL_5MINUTE, "limit": 864},
         {"interval": Client.KLINE_INTERVAL_15MINUTE, "limit": 672},
@@ -637,7 +637,7 @@ def main():
     google_news_data = fetch_google_news_data(query=google_query_keyword, total_results=30)
     save_google_news_data(google_news_data, output_folder, top_n=10, timestamp_prefix=common_timestamp_prefix)
 
-    # 4) 공포/탐욕 지수
+    # # 4) 공포/탐욕 지수
     fear_greed_index = requests.get("https://api.alternative.me/fng/?limit=7").json().get("data", [])
     save_fng_to_csv(fear_greed_index, output_folder, timestamp_prefix=common_timestamp_prefix)
 

@@ -350,9 +350,9 @@ def fetch_and_save_ohlcv(symbol, output_folder, intervals, timestamp_prefix=None
         df["bb_width"] = ((df["bb_upper"] - df["bb_lower"]) / df["bb_mid"]) * 100
 
         # EMA
-        df["ema_7"] = df["close"].ewm(span=7, adjust=False).mean()
-        df["ema_25"] = df["close"].ewm(span=25, adjust=False).mean()
-        df["ema_99"] = df["close"].ewm(span=99, adjust=False).mean()
+        df["ema_50"] = df["close"].ewm(span=50, adjust=False).mean()
+        df["ema_200"] = df["close"].ewm(span=200, adjust=False).mean()
+        # df["ema_99"] = df["close"].ewm(span=99, adjust=False).mean()
 
         # Fibonacci Levels
         fib_levels = calculate_fibonacci_levels(df, lookback=100)
@@ -376,11 +376,12 @@ def fetch_and_save_ohlcv(symbol, output_folder, intervals, timestamp_prefix=None
         # 6) 최종 컬럼 순서 지정
         desired_columns = [
             "timestamp","open","high","low","close","volume","value",
-            "rsi","macd","macd_signal","macd_hist",
+            "rsi",
+            "macd","macd_signal","macd_hist",
             "bb_mid","bb_upper","bb_lower","bb_width",
-            "obv",
-            "ema_7","ema_25","ema_99",
-            "fib_0%","fib_23.6%","fib_38.2%","fib_50%","fib_61.8%","fib_78.6%","fib_100%"
+            # "obv",
+            "ema_50","ema_200",
+            # "fib_0%","fib_23.6%","fib_38.2%","fib_50%","fib_61.8%","fib_78.6%","fib_100%"
         ]
 
         # "value" 컬럼이 없으면 만들기
@@ -469,10 +470,10 @@ def main():
 
     # 2) 여러 구간별 OHLCV 저장 (최신 데이터가 맨 위)
     my_intervals = [
-        {"interval": "minute15", "count": 5760},  # 약 2개월
-        {"interval": "minute240", "count": 1800},  # 약 6개월
+        # {"interval": "minute15", "count": 5760},  # 약 2개월
+        {"interval": "minute240", "count": 1080},  # 약 6개월
         {"interval": "day", "count": 1095},  # 약 3년
-        {"interval": "week", "count": 260}  # 약 5년
+        # {"interval": "week", "count": 260}  # 약 5년
     ]
     fetch_and_save_ohlcv("KRW-BTC", output_folder, my_intervals, timestamp_prefix=common_timestamp_prefix)
 

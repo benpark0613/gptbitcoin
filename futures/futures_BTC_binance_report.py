@@ -410,13 +410,17 @@ def fetch_and_save_ohlcv(symbol, output_folder, intervals, timestamp_prefix=None
 
             # EMA 계산 (해당 interval이면)
             if interval_name in ema_intervals:
-                df["ema_7"] = df["close"].ewm(span=7).mean()
-                df["ema_25"] = df["close"].ewm(span=25).mean()
-                df["ema_99"] = df["close"].ewm(span=99).mean()
+                df["ema_9"] = df["close"].ewm(span=9).mean()
+                df["ema_21"] = df["close"].ewm(span=21).mean()
+                # df["ema_7"] = df["close"].ewm(span=7).mean()
+                # df["ema_25"] = df["close"].ewm(span=25).mean()
+                # df["ema_99"] = df["close"].ewm(span=99).mean()
             else:
-                df["ema_7"] = np.nan
-                df["ema_25"] = np.nan
-                df["ema_99"] = np.nan
+                df["ema_9"] = np.nan
+                df["ema_12"] = np.nan
+                # df["ema_7"] = np.nan
+                # df["ema_25"] = np.nan
+                # df["ema_99"] = np.nan
 
             # RSI, MACD, Bollinger, OBV
             df["rsi"] = calculate_rsi(df, period=14)
@@ -470,10 +474,12 @@ def fetch_and_save_ohlcv(symbol, output_folder, intervals, timestamp_prefix=None
             # 최종 컬럼 순서
             desired_columns = [
                 "timestamp", "open", "high", "low", "close", "volume", "value",
-                "rsi", "macd", "macd_signal", "macd_hist",
+                "rsi",
+                # "macd", "macd_signal", "macd_hist",
                 "bb_mid", "bb_upper", "bb_lower", "bb_width",
-                "obv", "ema_7", "ema_25", "ema_99",
-                "fib_0%", "fib_23.6%", "fib_38.2%", "fib_50%", "fib_61.8%", "fib_78.6%", "fib_100%"
+                # "obv",
+                "ema_9", "ema_21"
+                # "fib_0%", "fib_23.6%", "fib_38.2%", "fib_50%", "fib_61.8%", "fib_78.6%", "fib_100%"
             ]
             existing_cols = [col for col in desired_columns if col in df.columns]
             df = df[existing_cols]
@@ -617,9 +623,9 @@ def main():
     orderbook_limit = 100  # 오더북 개수 제한
     google_query_keyword = "Bitcoin"  # 구글뉴스 검색어
     intervals_for_ohlcv = [
-        {"interval": Client.KLINE_INTERVAL_5MINUTE, "limit": 600},
-        {"interval": Client.KLINE_INTERVAL_15MINUTE, "limit": 300},
-        {"interval": Client.KLINE_INTERVAL_30MINUTE, "limit": 240},
+        {"interval": Client.KLINE_INTERVAL_5MINUTE, "limit": 864},
+        {"interval": Client.KLINE_INTERVAL_15MINUTE, "limit": 672},
+        # {"interval": Client.KLINE_INTERVAL_30MINUTE, "limit": 336},
     ]
 
     # 보고서 폴더 생성
