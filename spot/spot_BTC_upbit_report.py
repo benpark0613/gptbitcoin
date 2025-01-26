@@ -469,9 +469,10 @@ def main():
 
     # 2) 여러 구간별 OHLCV 저장 (최신 데이터가 맨 위)
     my_intervals = [
-        {"interval": "day", "count": 1460},       # 일봉
-        {"interval": "minute240", "count": 2500},# 4시간봉
-        {"interval": "week", "count": 520}       # 주봉
+        {"interval": "minute15", "count": 5760},  # 약 2개월
+        {"interval": "minute240", "count": 1800},  # 약 6개월
+        {"interval": "day", "count": 1095},  # 약 3년
+        {"interval": "week", "count": 260}  # 약 5년
     ]
     fetch_and_save_ohlcv("KRW-BTC", output_folder, my_intervals, timestamp_prefix=common_timestamp_prefix)
 
