@@ -623,9 +623,11 @@ def main():
     orderbook_limit = 100  # 오더북 개수 제한
     google_query_keyword = "Bitcoin"  # 구글뉴스 검색어
     intervals_for_ohlcv = [
-        {"interval": Client.KLINE_INTERVAL_5MINUTE, "limit": 864},
+        {"interval": Client.KLINE_INTERVAL_5MINUTE, "limit": 576},
         {"interval": Client.KLINE_INTERVAL_15MINUTE, "limit": 672},
-        # {"interval": Client.KLINE_INTERVAL_30MINUTE, "limit": 336},
+        {"interval": Client.KLINE_INTERVAL_1HOUR, "limit": 720},
+        {"interval": Client.KLINE_INTERVAL_4HOUR, "limit": 480},
+        {"interval": Client.KLINE_INTERVAL_1DAY, "limit": 720},
     ]
 
     # 보고서 폴더 생성
@@ -637,15 +639,15 @@ def main():
     save_balance_and_orderbook(futures_balance, orderbook, output_folder, timestamp_prefix=common_timestamp_prefix)
 
     # 2) OHLCV 데이터 + 지표(RSI, MACD, Bollinger, OBV) + EMA + 피보나치 레벨
-    fetch_and_save_ohlcv(symbol, output_folder, intervals_for_ohlcv, timestamp_prefix=common_timestamp_prefix)
+    # fetch_and_save_ohlcv(symbol, output_folder, intervals_for_ohlcv, timestamp_prefix=common_timestamp_prefix)
 
     # 3) (수정된) 구글 뉴스 스크래핑(셀레니움) 후 저장
-    google_news_data = fetch_google_news_data(query=google_query_keyword, total_results=30)
-    save_google_news_data(google_news_data, output_folder, top_n=10, timestamp_prefix=common_timestamp_prefix)
+    # google_news_data = fetch_google_news_data(query=google_query_keyword, total_results=30)
+    # save_google_news_data(google_news_data, output_folder, top_n=10, timestamp_prefix=common_timestamp_prefix)
 
     # 4) 공포/탐욕 지수
-    fear_greed_index = requests.get("https://api.alternative.me/fng/?limit=7").json().get("data", [])
-    save_fng_to_csv(fear_greed_index, output_folder, timestamp_prefix=common_timestamp_prefix)
+    # fear_greed_index = requests.get("https://api.alternative.me/fng/?limit=7").json().get("data", [])
+    # save_fng_to_csv(fear_greed_index, output_folder, timestamp_prefix=common_timestamp_prefix)
 
     # 5) 포지션/오픈오더 조회 후 CSV
     positions = fetch_futures_positions()

@@ -29,6 +29,7 @@ def main():
     news_list = get_top_10_recent_news(rss_url)
 
     # 4) 저장 폴더 경로 지정
+    #    (예: C:\MyProjects\gptbitcoin\report\futures\report)
     report_path = r"C:\MyProjects\gptbitcoin\report\futures\report"
 
     # 파일 이름에 붙일 접두어(년월일시분) 생성
@@ -41,29 +42,19 @@ def main():
     if not os.path.exists(report_path):
         os.makedirs(report_path)
 
-    # 5) 각 인터벌마다 다른 limit을 설정하고 싶다면, 아래와 같이 딕셔너리로 관리
-    limit_dict = {
-        "5m": 1000,
-        "15m": 1000,
-        "1h": 1000,
-        "4h": 500,
-        "1d": 300
-    }
-
-    # 수집할 인터벌 리스트
+    # 5) 수집할 캔들(interval) 리스트 및 limit 설정
     intervals = ["5m", "15m", "1h", "4h", "1d"]
+    limit = 500  # 과거 500개의 캔들
 
     # 6) 각 interval별로 klines 데이터 수집 후 CSV로 저장
     for interval in intervals:
-        # 딕셔너리에서 limit 값을 가져오고, 없으면 디폴트 500 사용
-        limit = limit_dict.get(interval, 500)
         klines = client.futures_klines(symbol=symbol, interval=interval, limit=limit)
-
         csv_filename = f"{date_prefix}_{symbol}_{interval}.csv"
         csv_filepath = os.path.join(report_path, csv_filename)
 
         with open(csv_filepath, mode='w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
+            # close_time은 사용하지 않는다면 제거 가능
             writer.writerow(["open_time", "open", "high", "low", "close", "volume"])
 
             for k in klines:
@@ -83,9 +74,13 @@ def main():
                     volume,
                 ])
 
-    # 7) 잔고가 0 아닌 경우만 CSV 저장
+    # 7) 선물계좌 잔고, 포지션 정보, 미체결 주문, 오더북, 뉴스 리스트를 CSV로 저장
+
+    # (A) 선물 계좌잔고
+    # balance가 0이 아닌 항목만 필터링
     nonzero_futures_balance = []
     for item in futures_balance:
+        # balance 필드가 0이 아닌지 확인 (문자열 -> float 변환 후 비교)
         if float(item["balance"]) != 0.0:
             nonzero_futures_balance.append(item)
 
@@ -151,6 +146,7 @@ def main():
     print("Open Orders:", open_orders)
     print("Orderbook Depth:", orderbook)
     print("Recent News:", news_list)
+
 
 if __name__ == "__main__":
     main()
