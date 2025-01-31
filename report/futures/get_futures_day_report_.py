@@ -4,9 +4,10 @@ from datetime import datetime
 from dotenv import load_dotenv
 from binance.client import Client
 
-# clear_folder 함수 불러오기
+from get_googlenews import get_latest_10_articles
 from module.clear_folder import clear_folder
 from module.get_rss_google_new import get_top_10_recent_news
+
 
 def main():
     # 1) 환경 변수 로드 및 바이낸스 클라이언트 연결
@@ -19,20 +20,21 @@ def main():
     # 2) 심볼, 기본 설정
     symbol = "BTCUSDT"
     orderbook_limit = 100
-    rss_url = "https://news.google.com/rss/search?q=bitcoin&hl=en&gl=US"
 
     # 3) 선물 계좌잔고, 포지션 정보, 미체결 주문, 오더북, 뉴스 리스트 가져오기
     futures_balance = client.futures_account_balance()
     positions = client.futures_position_information()
     open_orders = client.futures_get_open_orders(symbol=symbol)
     orderbook = client.futures_order_book(symbol=symbol, limit=orderbook_limit)
-    news_list = get_top_10_recent_news(rss_url)
+
+    # (A) 구글 뉴스 최신 10개 기사
+    full_news_list = get_latest_10_articles("Bitcoin")
+    # (B) RSS로부터 최근 10개 뉴스
+    rss_news_list = get_top_10_recent_news("https://news.google.com/rss/search?q=bitcoin&hl=en&gl=US")
 
     # 4) 저장 폴더 경로 지정
-    #    (예: C:\MyProjects\gptbitcoin\report\futures\report)
-    report_path = r"C:\MyProjects\gptbitcoin\report\futures\report"
-
-    # 파일 이름에 붙일 접두어(년월일시분) 생성
+    report_path = "report_day"
+    # 파일 이름 접두어(년월일시분)
     date_prefix = datetime.now().strftime('%Y%m%d%H%M')
 
     # 폴더 내부 파일/폴더 비우기
@@ -42,19 +44,27 @@ def main():
     if not os.path.exists(report_path):
         os.makedirs(report_path)
 
-    # 5) 수집할 캔들(interval) 리스트 및 limit 설정
-    intervals = ["5m", "15m", "1h", "4h", "1d"]
-    limit = 500  # 과거 500개의 캔들
+    # 5) 각 인터벌마다 다른 limit을 설정하고 싶다면, 아래와 같이 딕셔너리로 관리
+    limit_dict = {
+        "5m": 1008,  # 대략 3.5일치
+        "15m": 672,  # 대략 7일치
+        "1h": 720,  # 대략 30일치
+        "4h": 360,  # 대략 60일치
+    }
+
+    # 수집할 인터벌 리스트
+    intervals = ["5m", "15m", "1h", "4h"]
 
     # 6) 각 interval별로 klines 데이터 수집 후 CSV로 저장
     for interval in intervals:
+        limit = limit_dict.get(interval, 500)  # 딕셔너리에서 limit을 가져오고, 없으면 500
         klines = client.futures_klines(symbol=symbol, interval=interval, limit=limit)
+
         csv_filename = f"{date_prefix}_{symbol}_{interval}.csv"
         csv_filepath = os.path.join(report_path, csv_filename)
 
         with open(csv_filepath, mode='w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            # close_time은 사용하지 않는다면 제거 가능
             writer.writerow(["open_time", "open", "high", "low", "close", "volume"])
 
             for k in klines:
@@ -74,13 +84,9 @@ def main():
                     volume,
                 ])
 
-    # 7) 선물계좌 잔고, 포지션 정보, 미체결 주문, 오더북, 뉴스 리스트를 CSV로 저장
-
-    # (A) 선물 계좌잔고
-    # balance가 0이 아닌 항목만 필터링
+    # 7) 잔고(미사용, 또는 0이 아닌 것만) CSV 저장
     nonzero_futures_balance = []
     for item in futures_balance:
-        # balance 필드가 0이 아닌지 확인 (문자열 -> float 변환 후 비교)
         if float(item["balance"]) != 0.0:
             nonzero_futures_balance.append(item)
 
@@ -127,14 +133,23 @@ def main():
     #     else:
     #         writer.writerow(["No Data"])
 
-    # (E) 뉴스 리스트
-    news_list_file = os.path.join(report_path, f"{date_prefix}_news_list.csv")
-    with open(news_list_file, 'w', newline='', encoding='utf-8') as f:
-        if news_list:
-            fieldnames = news_list[0].keys()
+    # (E) 뉴스 리스트 CSV 저장
+    # full_news_list가 있으면 full_news_list 저장, 없으면 rss_news_list 저장.
+    news_file = os.path.join(report_path, f"{date_prefix}_news_list.csv")
+    with open(news_file, 'w', newline='', encoding='utf-8') as f:
+        # full_news_list가 비어있지 않으면
+        if full_news_list:
+            fieldnames = full_news_list[0].keys()
             writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
             writer.writeheader()
-            writer.writerows(news_list)
+            writer.writerows(full_news_list)
+        # full_news_list가 비어있고, rss_news_list가 있으면
+        elif rss_news_list:
+            fieldnames = rss_news_list[0].keys()
+            writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
+            writer.writeheader()
+            writer.writerows(rss_news_list)
+        # 둘 다 없으면
         else:
             writer = csv.writer(f)
             writer.writerow(["No Data"])
@@ -145,7 +160,8 @@ def main():
     print("Open Positions:", positions)
     print("Open Orders:", open_orders)
     print("Orderbook Depth:", orderbook)
-    print("Recent News:", news_list)
+    print("Recent News (full_news_list):", full_news_list)
+    print("Recent News (rss_news_list):", rss_news_list)
 
 
 if __name__ == "__main__":

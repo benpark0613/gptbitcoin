@@ -85,7 +85,7 @@ if __name__ == "__main__":
     df = pd.DataFrame(news_list)
 
     # 큰따옴표 제거(quoting=csv.QUOTE_NONE), 구분자 기본(쉼표)
-    df.to_csv("news_no_quotes.csv", index=False, quoting=csv.QUOTE_NONE, escapechar="")
+    df.to_csv("news_no_quotes.csv", index=False, quoting=csv.QUOTE_NONE, escapechar="\\")
 
     # 결과 출력
     for idx, news in enumerate(news_list, 1):
