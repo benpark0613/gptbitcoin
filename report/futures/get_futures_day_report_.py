@@ -4,8 +4,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 from binance.client import Client
 
-from get_googlenews import get_latest_10_articles
 from module.clear_folder import clear_folder
+from module.get_googlenews import get_latest_10_articles
 from module.get_rss_google_new import get_top_10_recent_news
 
 
@@ -50,10 +50,11 @@ def main():
         "15m": 672,  # 대략 7일치
         "1h": 720,  # 대략 30일치
         "4h": 360,  # 대략 60일치
+        "1d": 180  # 대략 6개월치
     }
 
     # 수집할 인터벌 리스트
-    intervals = ["5m", "15m", "1h", "4h"]
+    intervals = ["5m", "15m", "1h", "4h", "1d"]
 
     # 6) 각 interval별로 klines 데이터 수집 후 CSV로 저장
     for interval in intervals:

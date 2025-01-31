@@ -6,7 +6,7 @@ import pandas as pd
 import pyupbit
 from dotenv import load_dotenv
 
-from get_googlenews import get_latest_10_articles
+from module.get_googlenews import get_latest_10_articles
 from module.upbit.get_fear_and_greed import get_upbit_fear_greed_index
 from module.get_rss_google_new import get_top_10_recent_news
 from module.upbit.add_technical_indicator import add_technical_indicators
