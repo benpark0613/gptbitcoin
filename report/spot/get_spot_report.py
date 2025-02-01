@@ -27,22 +27,21 @@ def main():
     my_balances = upbit.get_balances()  # 잔고 정보
     open_orders = upbit.get_order(ticker, "wait")  # 진행 중인 주문
     done_orders = upbit.get_order(ticker, "done")  # 완료된 주문
-    orderbook = pyupbit.get_orderbook(ticker)  # 호가 정보(주문장)
 
-    # 뉴스 및 지표 데이터
-    # (A) 구글 뉴스 최신 10개 기사
-    full_news_list = get_latest_10_articles("Bitcoin")
-    # (B) RSS로부터 최근 10개 뉴스
-    rss_news_list = get_top_10_recent_news("https://news.google.com/rss/search?q=bitcoin&hl=en&gl=US")
+    # orderbook = pyupbit.get_orderbook(ticker)  # 호가 정보(주문장)
 
-    fear_and_greed_index = get_upbit_fear_greed_index()
+    # # 뉴스 및 지표 데이터
+    # # (A) 구글 뉴스 최신 10개 기사
+    # full_news_list = get_latest_10_articles("Bitcoin")
+    # # (B) RSS로부터 최근 10개 뉴스
+    # rss_news_list = get_top_10_recent_news("https://news.google.com/rss/search?q=bitcoin&hl=en&gl=US")
+    #
+    # fear_and_greed_index = get_upbit_fear_greed_index()
 
     # 차트(OHLCV) 정보
-    df_5m = pyupbit.get_ohlcv(ticker, "minute5", 1000)
-    df_15m = pyupbit.get_ohlcv(ticker, "minute15", 1000)
-    df_1h = pyupbit.get_ohlcv(ticker, "minute60", 1000)
-    df_4h = pyupbit.get_ohlcv(ticker, "minute240", 500)
-    df_1d = pyupbit.get_ohlcv(ticker, "day", 300)
+    # df_1h = pyupbit.get_ohlcv(ticker, "minute60", 700)
+    # df_4h = pyupbit.get_ohlcv(ticker, "minute240", 400)
+    # df_1d = pyupbit.get_ohlcv(ticker, "day", 200)
     # chart_4h = add_technical_indicators(df_4h, sub_indicators)
     # chart_4h = chart_4h.sort_index(ascending=False)
     # chart_1d = add_technical_indicators(df_1d, sub_indicators)
@@ -62,25 +61,25 @@ def main():
     balances_df.to_csv(file_path_my_balances, index=False)
     print(f"my_balances saved to {file_path_my_balances}")
 
-    file_path_5m = os.path.join(report_dir, f"{current_time}_5m.csv")
-    df_5m.to_csv(file_path_5m, index=True, index_label="timestamp")
-    print(f"chart_5m saved to {file_path_5m}")
+    # file_path_5m = os.path.join(report_dir, f"{current_time}_5m.csv")
+    # df_5m.to_csv(file_path_5m, index=True, index_label="timestamp")
+    # print(f"chart_5m saved to {file_path_5m}")
+    #
+    # file_path_15m = os.path.join(report_dir, f"{current_time}_15m.csv")
+    # df_15m.to_csv(file_path_15m, index=True, index_label="timestamp")
+    # print(f"chart_15m saved to {file_path_15m}")
 
-    file_path_15m = os.path.join(report_dir, f"{current_time}_15m.csv")
-    df_15m.to_csv(file_path_15m, index=True, index_label="timestamp")
-    print(f"chart_15m saved to {file_path_15m}")
-
-    file_path_1h = os.path.join(report_dir, f"{current_time}_1h.csv")
-    df_1h.to_csv(file_path_1h, index=True, index_label="timestamp")
-    print(f"chart_1h saved to {file_path_1h}")
-
-    file_path_4h = os.path.join(report_dir, f"{current_time}_4h.csv")
-    df_4h.to_csv(file_path_4h, index=True, index_label="timestamp")
-    print(f"chart_4h saved to {file_path_4h}")
-
-    file_path_1d = os.path.join(report_dir, f"{current_time}_1d.csv")
-    df_1d.to_csv(file_path_1d, index=True, index_label="timestamp")
-    print(f"chart_1d saved to {file_path_1d}")
+    # file_path_1h = os.path.join(report_dir, f"{current_time}_1h.csv")
+    # df_1h.to_csv(file_path_1h, index=True, index_label="timestamp")
+    # print(f"chart_1h saved to {file_path_1h}")
+    #
+    # file_path_4h = os.path.join(report_dir, f"{current_time}_4h.csv")
+    # df_4h.to_csv(file_path_4h, index=True, index_label="timestamp")
+    # print(f"chart_4h saved to {file_path_4h}")
+    #
+    # file_path_1d = os.path.join(report_dir, f"{current_time}_1d.csv")
+    # df_1d.to_csv(file_path_1d, index=True, index_label="timestamp")
+    # print(f"chart_1d saved to {file_path_1d}")
 
     # 4) 진행 중인 주문(open_orders)
     file_path_open_orders = os.path.join(report_dir, f"{current_time}_open_orders.csv")
@@ -117,24 +116,24 @@ def main():
     # print(f"orderbook saved to {file_path_orderbook}")
 
     # 7) 뉴스 정보(news_list)
-    news_file = os.path.join(report_dir, f"{current_time}_news_list.csv")
-    with open(news_file, 'w', newline='', encoding='utf-8') as f:
-        # full_news_list가 비어있지 않으면
-        if full_news_list:
-            fieldnames = full_news_list[0].keys()
-            writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
-            writer.writeheader()
-            writer.writerows(full_news_list)
-        # full_news_list가 비어있고, rss_news_list가 있으면
-        elif rss_news_list:
-            fieldnames = rss_news_list[0].keys()
-            writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
-            writer.writeheader()
-            writer.writerows(rss_news_list)
-        # 둘 다 없으면
-        else:
-            writer = csv.writer(f)
-            writer.writerow(["No Data"])
+    # news_file = os.path.join(report_dir, f"{current_time}_news_list.csv")
+    # with open(news_file, 'w', newline='', encoding='utf-8') as f:
+    #     # full_news_list가 비어있지 않으면
+    #     if full_news_list:
+    #         fieldnames = full_news_list[0].keys()
+    #         writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
+    #         writer.writeheader()
+    #         writer.writerows(full_news_list)
+    #     # full_news_list가 비어있고, rss_news_list가 있으면
+    #     elif rss_news_list:
+    #         fieldnames = rss_news_list[0].keys()
+    #         writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
+    #         writer.writeheader()
+    #         writer.writerows(rss_news_list)
+    #     # 둘 다 없으면
+    #     else:
+    #         writer = csv.writer(f)
+    #         writer.writerow(["No Data"])
 
 
 
