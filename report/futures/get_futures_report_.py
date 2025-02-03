@@ -265,9 +265,9 @@ def main():
     # 4) 각 캔들 간격별 데이터(5m, 15m, 1h)를 API로 가져와 딕셔너리에 저장
     intervals = ["5m", "15m", "1h"]
     candle_counts = {
-        "5m": 100,
-        "15m": 150,
-        "1h": 250
+        "5m": 576,
+        "15m": 672,
+        "1h": 336
     }
     klines_dict = {}
     for interval in intervals:
@@ -275,8 +275,8 @@ def main():
         klines_dict[interval] = klines
 
     # 5) 구글 뉴스 데이터 가져오기 (query: "Bitcoin")
-    # google_news_data = get_latest_10_articles(query="Bitcoin")
-    google_news_data = []
+    google_news_data = get_latest_10_articles(query="Bitcoin")
+    # google_news_data = []
 
     # 6) CSV 저장 경로 설정
     futures_balance_file = os.path.join(report_path, f"{date_prefix}_futures_balance.csv")

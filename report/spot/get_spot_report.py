@@ -179,15 +179,19 @@ def remove_decimals_from_df(df):
 
 
 def list_dict_to_csv_string(data_list, fieldnames, delimiter=';'):
-    """
-    list[dict] 형태의 데이터를 CSV 문자열로 변환해서 반환합니다.
-    """
     output = StringIO()
-    writer = csv.DictWriter(output, fieldnames=fieldnames, delimiter=delimiter)
+    writer = csv.DictWriter(
+        output,
+        fieldnames=fieldnames,
+        delimiter=delimiter,
+        lineterminator='\n'   # 각 행은 \n으로 구분
+    )
     writer.writeheader()
     writer.writerows(data_list)
-    return output.getvalue()
 
+    # getvalue() 결과 끝에 \n이 들어갈 수 있으므로 제거
+    csv_str = output.getvalue().rstrip('\r\n')
+    return csv_str
 
 def save_to_txt(report_folder,
                 open_orders_data,
@@ -283,6 +287,7 @@ def save_to_txt(report_folder,
         file.write("-- googlenews.csv\n")
         google_news_csv_str = list_dict_to_csv_string(google_news_data, google_news_fieldnames, delimiter=';')
         file.write(google_news_csv_str)
+        file.write("\n\n")
 
 
 def update_or_create_record(file_path, new_data, fieldnames):
@@ -326,8 +331,8 @@ def main():
 
     # 1) 구글 뉴스 스크래핑 (최신 기사 10개)
     #    원하는 키워드로 변경 가능 예: "비트코인" / "BTC" 등
-    # google_news_data = get_latest_10_articles(query="Bitcoin")
-    google_news_data = []
+    google_news_data = get_latest_10_articles(query="Bitcoin")
+    # google_news_data = []
 
     # 2) googlenews.csv 파일로 저장
     google_news_fieldnames = ['title', 'snippet', 'date', 'source', 'parsed_date']
@@ -406,9 +411,9 @@ def main():
     # OHLCV 데이터 받아서 CSV 파일로 저장
     try:
         ticker = "KRW-BTC"
-        df_15m = pyupbit.get_ohlcv(ticker, "minute15", 60)  # 15분봉 60개
-        df_1h = pyupbit.get_ohlcv(ticker, "minute60", 60)   # 1시간봉 60개
-        df_4h = pyupbit.get_ohlcv(ticker, "minute240", 60)  # 4시간봉 60개
+        df_15m = pyupbit.get_ohlcv(ticker, "minute15", 672)  # 15분봉 60개
+        df_1h = pyupbit.get_ohlcv(ticker, "minute60", 336)   # 1시간봉 60개
+        df_4h = pyupbit.get_ohlcv(ticker, "minute240", 180)  # 4시간봉 60개
 
         save_ohlcv_to_csv(df_15m, "ohlcv_15m.csv")
         save_ohlcv_to_csv(df_1h, "ohlcv_1h.csv")
