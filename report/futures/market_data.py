@@ -2,7 +2,7 @@ import os
 import csv
 from datetime import datetime
 from dotenv import load_dotenv
-from binance.client import Client
+from mbinance.client import Client
 
 # clear_folder 함수 불러오기
 from module.clear_folder import clear_folder

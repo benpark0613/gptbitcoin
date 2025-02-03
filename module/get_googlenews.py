@@ -73,7 +73,7 @@ def get_latest_10_articles(query, date_filter=None):
 
     collected_results = []
     start = 0
-    SCRAPE_TOTAL = 30  # 최대 30개 기사
+    SCRAPE_TOTAL = 20  # 최대 30개 기사
 
     try:
         while len(collected_results) < SCRAPE_TOTAL:

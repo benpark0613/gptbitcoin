@@ -4,7 +4,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from binance.client import Client
 
-from module.binance.position_history import build_position_history
+from module.mbinance.position_history import build_position_history
 from module.clear_folder import clear_folder
 from module.get_googlenews import get_latest_10_articles
 from module.get_rss_google_new import get_top_10_recent_news
@@ -34,7 +34,7 @@ def main():
     # rss_news_list = get_top_10_recent_news("https://news.google.com/rss/search?q=bitcoin&hl=en&gl=US")
 
     # 4) 저장 폴더 경로 지정
-    report_path = "report_day"
+    report_path = "../../report/futures/report_day"
     # 파일 이름 접두어(년월일시분)
     date_prefix = datetime.now().strftime('%Y%m%d%H%M')
 

@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 import pandas as pd
-from binance.client import Client
+from mbinance.client import Client
 
 def fetch_binance_data(symbol="BTCUSDT", limit=1000):
     load_dotenv()

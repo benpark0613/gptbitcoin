@@ -16,8 +16,8 @@ import time  # Selenium으로 페이지 로딩 대기 등에 사용
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
-# python-binance
-from binance.client import Client
+# python-mbinance
+from mbinance.client import Client
 
 # Selenium 관련
 from selenium import webdriver

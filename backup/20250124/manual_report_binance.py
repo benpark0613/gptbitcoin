@@ -6,7 +6,7 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
-from binance.client import Client
+from mbinance.client import Client
 from dotenv import load_dotenv
 
 # ============== (1) 설정 및 준비 ==============

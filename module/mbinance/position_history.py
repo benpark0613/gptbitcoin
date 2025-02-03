@@ -1,10 +1,7 @@
 # 위치: my_project/module/position_history.py
 
-import os
 import pandas as pd
-from datetime import datetime
-from dotenv import load_dotenv
-from binance.client import Client
+
 
 def fetch_binance_data(client, symbol="BTCUSDT", limit=1000):
     """
@@ -88,26 +85,18 @@ def build_position_history(client,
     (2) UTC->KST 변환, 소수점 반올림, totalPnL 계산
     (3) cutoff_dt(조회 기준 날짜) 이후의 데이터만 필터링 등
     을 모두 수행한 뒤 최종 DataFrame을 반환한다.
-
-    파라미터:
-      - access_key, secret_key: 바이낸스 API Key
-      - symbol: 조회 심볼
-      - limit: 조회 개수
-      - cutoff_dt: datetime (또는 None). 이 값 이후에 closedTime이 속하는 포지션만 반환
     """
-    # 1) 데이터 불러오기
-
     orders_df, trades_df, income_df = fetch_binance_data(client,
                                                          symbol=symbol, limit=limit)
 
-    # 2) REALIZED_PNL만 추출
+    # REALIZED_PNL만 추출
     if not income_df.empty:
         income_pnl_df = income_df[income_df["incomeType"] == "REALIZED_PNL"].copy()
         income_pnl_df["income"] = income_pnl_df["income"].astype(float, errors="ignore")
     else:
         income_pnl_df = pd.DataFrame(columns=income_df.columns)
 
-    # 3) 체결 정보 정리
+    # 체결 정보 정리
     trades_df["qty"] = trades_df.get("qty", 0).astype(float, errors="ignore")
     trades_df["price"] = trades_df.get("price", 0).astype(float, errors="ignore")
     trades_df["side"] = trades_df.get("side", "NONE")
@@ -121,7 +110,7 @@ def build_position_history(client,
     position_start_time = None
     is_isolated_mode = None
 
-    # 4) 포지션 추적 (간단화)
+    # 포지션 추적
     for idx, row in trades_df.iterrows():
         side = row["side"]
         qty = float(row["qty"])
@@ -135,7 +124,7 @@ def build_position_history(client,
             continue
 
         if current_size == 0:
-            # 새 포지션
+            # 새 포지션 시작
             position_start_time = ttime
             is_isolated_mode = isolated
             total_cost = price * qty
@@ -148,14 +137,14 @@ def build_position_history(client,
             else:
                 current_size -= qty
 
-            # 반전(롱→숏 / 숏→롱)
+            # 포지션 반전 처리
             if old_size > 0 and current_size < 0:
                 positions.append(_close_position(
                     symbol, position_start_time, ttime,
                     old_size, total_cost, old_size,
                     is_isolated_mode, income_pnl_df
                 ))
-                # 새로운 숏
+                # 새로운 숏 포지션 시작
                 position_start_time = ttime
                 is_isolated_mode = isolated
                 total_cost = price * abs(current_size)
@@ -166,13 +155,13 @@ def build_position_history(client,
                     old_size, total_cost, old_size,
                     is_isolated_mode, income_pnl_df
                 ))
-                # 새로운 롱
+                # 새로운 롱 포지션 시작
                 position_start_time = ttime
                 is_isolated_mode = isolated
                 total_cost = price * abs(current_size)
                 total_qty = current_size
             else:
-                # 같은 방향 or 부분 청산
+                # 동일 방향이거나 부분 청산인 경우
                 if old_size * current_size > 0:
                     total_cost += price * qty
                     total_qty = current_size
@@ -196,50 +185,60 @@ def build_position_history(client,
                         total_cost -= cost_reduced
                         total_qty = current_size
 
-    # 5) 포지션 히스토리 DataFrame으로 정리
+    # 모든 거래 처리 후, 아직 청산되지 않은 열린 포지션 기록
+    if current_size != 0 and position_start_time is not None:
+        entry_price = abs(total_cost / total_qty) if total_qty != 0 else 0.0
+        open_record = {
+            "symbol": symbol,
+            "mode": "Isolated" if is_isolated_mode else "Cross",
+            "direction": "LONG" if current_size > 0 else "SHORT",
+            "entryPrice": round(entry_price, 2),
+            "avgClosePrice": None,
+            "closingPnL": None,
+            "maxOpenInterest": abs(current_size),
+            "closedVol": None,
+            "openedTime": position_start_time,
+            "closedTime": None
+        }
+        positions.append(open_record)
+
     columns = [
-        "symbol","mode","direction",
-        "entryPrice","avgClosePrice","closingPnL",
-        "maxOpenInterest","closedVol",
-        "openedTime","closedTime"
+        "symbol", "mode", "direction",
+        "entryPrice", "avgClosePrice", "closingPnL",
+        "maxOpenInterest", "closedVol",
+        "openedTime", "closedTime"
     ]
     history_df = pd.DataFrame(positions, columns=columns)
 
-    # 6) 후처리
+    # 후처리: UTC->KST 변환, 소수점 반올림, totalPnL 계산 등
     if not history_df.empty:
-        # (A) UTC->KST 변환
         if pd.api.types.is_datetime64_any_dtype(history_df["openedTime"]):
             history_df["openedTime"] = history_df["openedTime"] + pd.Timedelta(hours=9)
         if pd.api.types.is_datetime64_any_dtype(history_df["closedTime"]):
             history_df["closedTime"] = history_df["closedTime"] + pd.Timedelta(hours=9)
 
-        # (B) 소수 둘째 자리 반올림
-        history_df["entryPrice"]    = history_df["entryPrice"].round(2)
-        history_df["avgClosePrice"] = history_df["avgClosePrice"].round(2)
-        history_df["closingPnL"]    = history_df["closingPnL"].round(2)
+        history_df["entryPrice"] = history_df["entryPrice"].round(2)
+        if history_df["avgClosePrice"].notnull().all():
+            history_df["avgClosePrice"] = history_df["avgClosePrice"].round(2)
+        if history_df["closingPnL"].notnull().all():
+            history_df["closingPnL"] = history_df["closingPnL"].round(2)
 
-        # (C) totalPnL 계산
         history_df.sort_values("closedTime", ascending=True, inplace=True, ignore_index=True)
-        history_df["totalPnL"] = history_df["closingPnL"].cumsum().round(2)
+        history_df["totalPnL"] = history_df["closingPnL"].fillna(0).cumsum().round(2)
         history_df.sort_values("closedTime", ascending=False, inplace=True, ignore_index=True)
 
-        # (D) cutoff_dt(조회 기준 날짜) 이후 데이터만 보고 싶다면 필터링
+        # cutoff_dt 적용 시 열린 포지션(closedTime이 NaT)도 유지하도록 조건 수정
         if cutoff_dt is not None:
-            # cutoff_dt가 datetime인지 확인
             if isinstance(cutoff_dt, str):
-                # str -> datetime 변환 (포맷에 맞게)
-                # 예: "202502010100" => 2025-02-01 01:00
                 cutoff_dt = pd.to_datetime(cutoff_dt, format="%Y%m%d%H%M")
-
-            # closedTime >= cutoff_dt로 필터
-            filtered = history_df[history_df["closedTime"] >= cutoff_dt].copy()
-            # 필터링된 데이터에서 totalPnL을 새로 cumsum
+            filtered = history_df[
+                (history_df["closedTime"].isna()) | (history_df["closedTime"] >= cutoff_dt)
+            ].copy()
             filtered.sort_values("closedTime", ascending=True, inplace=True, ignore_index=True)
-            filtered["totalPnL"] = filtered["closingPnL"].cumsum().round(2)
+            filtered["totalPnL"] = filtered["closingPnL"].fillna(0).cumsum().round(2)
             filtered.sort_values("closedTime", ascending=False, inplace=True, ignore_index=True)
             return filtered
         else:
             return history_df
     else:
-        # 포지션 히스토리가 없으면 빈 DF 반환
         return history_df
