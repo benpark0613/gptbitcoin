@@ -102,7 +102,6 @@ def remove_decimals(row):
     processed = []
     for item in row:
         try:
-            # float 변환 후 int로 캐스팅하면 소수점 이하 제거됨
             new_item = str(int(float(item)))
         except (ValueError, TypeError):
             new_item = item
@@ -111,48 +110,36 @@ def remove_decimals(row):
 
 
 def write_report_txt(position_df, nonzero_futures_balance, report_txt_file, date_prefix, symbol, klines_dict, google_news_data):
-    """
-    report.txt 파일에 아래 항목들을 CSV 형태(구분자 ;)
-    1) Current Position,
-    2) Current totalPnL,
-    3) Past Trade History,
-    4) Futures Balance,
-    5) 캔들 데이터(각 구간별: 5m, 15m, 1h),
-    6) 구글 뉴스 데이터
-    를 순서대로 작성.
-    """
     import pandas as pd
     import csv
     from datetime import datetime
     from zoneinfo import ZoneInfo
-    # position_df -> dict 변환 및 pd.Timestamp 문자열 변환
+
+    # DataFrame을 dict로 변환하고, pd.Timestamp는 문자열로 변환
     history_records = position_df.to_dict(orient="records")
     for record in history_records:
         for key, value in record.items():
             if isinstance(value, pd.Timestamp):
                 record[key] = value.strftime('%Y-%m-%d %H:%M:%S')
 
-    # Current / Past 구분
+    # 최종적으로 보고서에 기록할 컬럼 순서를 지정
+    report_order = [
+        "openedTime", "closedTime", "symbol", "mode", "direction", "entryPrice",
+        "avgClosePrice", "closingPnL", "CumulativeROI", "totalPnL", "DailyROI",
+        "TradePnLRatio", "maxOpenInterest", "closedVol"
+    ]
+
+    # 현재 포지션과 과거 거래를 구분하며 최신 닫힌 거래의 지표들을 추출
     current_position = []
     past_trade_history = []
     latest_total_pnl = None
+    latest_daily_roi = None
+    latest_cumulative_roi = None
     latest_closed_time = None
 
     for record in history_records:
-        position_data = {
-            "symbol": record.get("symbol"),
-            "mode": record.get("mode"),
-            "direction": record.get("direction"),
-            "entryPrice": record.get("entryPrice"),
-            "avgClosePrice": record.get("avgClosePrice"),
-            "closingPnL": record.get("closingPnL"),
-            "maxOpenInterest": record.get("maxOpenInterest"),
-            "closedVol": record.get("closedVol"),
-            "openedTime": record.get("openedTime"),
-            "closedTime": record.get("closedTime"),
-            "totalPnL": record.get("totalPnL")
-        }
-        # pd.isna()를 사용하여 closedTime이 누락된 경우(열린 포지션)로 분류
+        # report_order 순서대로 데이터 딕셔너리 생성
+        position_data = {key: record.get(key) for key in report_order}
         if pd.isna(record.get("closedTime")):
             current_position.append(position_data)
         else:
@@ -160,34 +147,36 @@ def write_report_txt(position_df, nonzero_futures_balance, report_txt_file, date
             if latest_closed_time is None or record["closedTime"] > latest_closed_time:
                 latest_closed_time = record["closedTime"]
                 latest_total_pnl = record.get("totalPnL")
+                latest_daily_roi = record.get("DailyROI")
+                latest_cumulative_roi = record.get("CumulativeROI")
 
     with open(report_txt_file, 'w', encoding='utf-8', newline='') as txt_file:
-        # (1) Current Position
+        # (2) 최신 닫힌 거래의 지표들 기록
+        txt_file.write(f"-- Current totalPnL ; {latest_total_pnl}\n")
+        txt_file.write(f"-- Current DailyROI ; {latest_daily_roi}\n")
+        txt_file.write(f"-- Current CumulativeROI ; {latest_cumulative_roi}\n\n")
+
+        # (1) Current Position 섹션
         txt_file.write(f"-- {date_prefix}_Current_Position (CSV)\n")
         if current_position:
-            fieldnames = list(current_position[0].keys())
-            writer = csv.DictWriter(txt_file, fieldnames=fieldnames, delimiter=';')
+            writer = csv.DictWriter(txt_file, fieldnames=report_order, delimiter=';')
             writer.writeheader()
             writer.writerows(current_position)
         else:
             txt_file.write("No Data\n")
         txt_file.write("\n")
 
-        # (2) Current totalPnL (바로 Current Position 다음에 기록)
-        txt_file.write(f"-- Current totalPnL ; {latest_total_pnl}\n\n")
-
-        # (3) Past Trade History
+        # (3) Past Trade History 섹션
         txt_file.write(f"-- {date_prefix}_Past_Trade_History (CSV)\n")
         if past_trade_history:
-            fieldnames = list(past_trade_history[0].keys())
-            writer = csv.DictWriter(txt_file, fieldnames=fieldnames, delimiter=';')
+            writer = csv.DictWriter(txt_file, fieldnames=report_order, delimiter=';')
             writer.writeheader()
             writer.writerows(past_trade_history)
         else:
             txt_file.write("No Data\n")
         txt_file.write("\n")
 
-        # (4) Futures Balance
+        # (4) Futures Balance 섹션
         txt_file.write(f"-- {date_prefix}_futures_balance (CSV)\n")
         if nonzero_futures_balance:
             fieldnames = list(nonzero_futures_balance[0].keys())
@@ -198,7 +187,7 @@ def write_report_txt(position_df, nonzero_futures_balance, report_txt_file, date
             txt_file.write("No Data\n")
         txt_file.write("\n")
 
-        # (5) 캔들 데이터 (각 구간별: 5m, 15m, 1h)
+        # (5) 캔들 데이터 섹션
         for interval, klines in klines_dict.items():
             txt_file.write(f"-- {date_prefix}_{symbol}_{interval}_klines (CSV)\n")
             headers = ["Readable Time", "Open Time", "Open", "High", "Low", "Close", "Volume",
@@ -213,7 +202,7 @@ def write_report_txt(position_df, nonzero_futures_balance, report_txt_file, date
                 writer.writerow([readable_time] + processed_row)
             txt_file.write("\n")
 
-        # (6) 구글 뉴스 데이터
+        # (6) 구글 뉴스 데이터 섹션
         txt_file.write(f"-- {date_prefix}_Google_News (CSV)\n")
         if google_news_data:
             headers = list(google_news_data[0].keys())
@@ -253,7 +242,6 @@ def main():
     symbol = "BTCUSDT"
     date_prefix = datetime.now().strftime('%Y%m%d%H%M')
 
-
     # 2) 폴더 세팅
     report_path = "report_day"
     prepare_directories(report_path)
@@ -262,13 +250,84 @@ def main():
     nonzero_futures_balance = get_nonzero_futures_balance(client)
     position_df = build_position_dataframe(client, symbol)
 
+    # ---------------------------
+    # [추가] 개별 거래 ROI 계산 (TradePnLRatio)
+    def compute_trade_pnl_ratio(row):
+        try:
+            if pd.notnull(row["closedVol"]) and float(row["closedVol"]) != 0 and row["entryPrice"] and float(row["entryPrice"]) != 0:
+                return round((row["closingPnL"] / (float(row["entryPrice"]) * float(row["closedVol"]))) * 100, 2)
+        except Exception:
+            return None
+        return None
+
+    position_df["TradePnLRatio"] = position_df.apply(compute_trade_pnl_ratio, axis=1)
+    # ---------------------------
+
+    # ---------------------------
+    # [추가] 누적 수익율 (Cumulative ROI) 계산
+    # 개별 거래에 trade_id 부여
+    position_df = position_df.reset_index().rename(columns={'index': 'trade_id'})
+    closed_df = position_df[position_df["closedTime"].notna()].copy()
+
+    def compute_notional(row):
+        try:
+            if pd.notnull(row["closedVol"]) and row["entryPrice"] and float(row["entryPrice"]) != 0:
+                return float(row["entryPrice"]) * float(row["closedVol"])
+        except Exception:
+            return 0
+        return 0
+
+    closed_df["notional"] = closed_df.apply(compute_notional, axis=1)
+    closed_df.sort_values("closedTime", ascending=True, inplace=True)
+    closed_df["cumulativeNotional"] = closed_df["notional"].cumsum()
+    closed_df["CumulativePnLRatio"] = closed_df.apply(
+        lambda row: round((row["totalPnL"] / row["cumulativeNotional"] * 100), 2)
+        if row["cumulativeNotional"] != 0 else 0, axis=1
+    )
+    # 누적 수익율을 "CumulativeROI" 컬럼으로 저장
+    position_df = position_df.merge(closed_df[["trade_id", "CumulativePnLRatio"]], on="trade_id", how="left")
+    position_df["CumulativeROI"] = position_df["CumulativePnLRatio"].fillna("")
+    # ---------------------------
+
+    # ---------------------------
+    # [추가] 일일 ROI 계산
+    # USDT 잔고에서 현재 잔고를 가져옴 (대부분 USDT 계좌 사용 가정)
+    usdt_balance = None
+    for item in nonzero_futures_balance:
+        if item.get("asset") == "USDT":
+            usdt_balance = float(item.get("balance", 0))
+            break
+    if usdt_balance is None and nonzero_futures_balance:
+        usdt_balance = float(nonzero_futures_balance[0].get("balance", 0))
+
+    closed_trades = position_df[position_df["closedTime"].notna()]
+    if not closed_trades.empty:
+        daily_total_pnl = closed_trades["closingPnL"].fillna(0).sum()
+    else:
+        daily_total_pnl = 0
+
+    initial_balance = usdt_balance - daily_total_pnl
+    if initial_balance != 0:
+        daily_roi = round((daily_total_pnl / initial_balance) * 100, 2)
+    else:
+        daily_roi = 0
+    position_df["DailyROI"] = daily_roi
+    # ---------------------------
+
+    # ---------------------------
+    # 최종 컬럼 순서 재정렬 (CSV 및 report.txt에 반영)
+    final_order = [
+        "openedTime", "closedTime", "symbol", "mode", "direction", "entryPrice",
+        "avgClosePrice", "closingPnL", "CumulativeROI", "totalPnL", "DailyROI",
+        "TradePnLRatio", "maxOpenInterest", "closedVol"
+    ]
+    final_order = [col for col in final_order if col in position_df.columns]
+    position_df = position_df[final_order]
+    # ---------------------------
+
     # 4) 각 캔들 간격별 데이터(5m, 15m, 1h)를 API로 가져와 딕셔너리에 저장
     intervals = ["5m", "15m", "1h"]
-    candle_counts = {
-        "5m": 576,
-        "15m": 672,
-        "1h": 336
-    }
+    candle_counts = {"5m": 576, "15m": 672, "1h": 336}
     klines_dict = {}
     for interval in intervals:
         klines = client.futures_klines(symbol=symbol, interval=interval, limit=candle_counts[interval])
@@ -276,8 +335,6 @@ def main():
 
     # 5) 구글 뉴스 데이터 가져오기 (query: "Bitcoin")
     google_news_data = get_latest_10_articles(query="Bitcoin")
-    # google_news_data = []
-
     # 6) CSV 저장 경로 설정
     futures_balance_file = os.path.join(report_path, f"{date_prefix}_futures_balance.csv")
     history_file = os.path.join(report_path, f"{date_prefix}_{symbol}_history.csv")
@@ -290,7 +347,8 @@ def main():
     save_google_news_csv(google_news_data, google_news_file)
 
     # 8) report.txt 작성 (캔들 데이터 및 구글 뉴스 포함)
-    write_report_txt(position_df, nonzero_futures_balance, report_txt_file, date_prefix, symbol, klines_dict, google_news_data)
+    write_report_txt(position_df, nonzero_futures_balance, report_txt_file, date_prefix, symbol, klines_dict,
+                     google_news_data)
 
     # 9) 별도 캔들 CSV 파일 저장 (옵션)
     for interval in intervals:
@@ -303,6 +361,7 @@ def main():
     print(f"Futures Balance: {futures_balance_file}")
     print(f"Google News CSV: {google_news_file}")
     print(f"Report (TXT): {report_txt_file}")
+    print(f"일일 ROI (DailyROI): {daily_roi:.2f}%")
 
 
 if __name__ == "__main__":
