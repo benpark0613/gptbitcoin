@@ -326,8 +326,8 @@ def main():
     # ---------------------------
 
     # 4) 각 캔들 간격별 데이터(5m, 15m, 1h)를 API로 가져와 딕셔너리에 저장
-    intervals = ["5m", "15m", "1h"]
-    candle_counts = {"5m": 576, "15m": 672, "1h": 336}
+    intervals = ["5m", "15m", "1h", "30m"]
+    candle_counts = {"5m": 1000, "15m": 333, "1h": 336, "30m": 167}
     klines_dict = {}
     for interval in intervals:
         klines = client.futures_klines(symbol=symbol, interval=interval, limit=candle_counts[interval])
