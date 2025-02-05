@@ -6,7 +6,7 @@ from io import StringIO
 import pandas as pd
 import pyupbit
 from dotenv import load_dotenv
-from module.get_googlenews import scrape_news
+from module.get_googlenews import scrape_news  # 필요 시 사용
 
 
 # ===============================================================
@@ -38,19 +38,18 @@ def list_dict_to_csv_string(data_list, fieldnames, delimiter=';'):
     return csv_str
 
 
-def remove_decimals_from_df(df):
+def round_numeric_columns_in_df(df):
     """
-    DataFrame의 모든 숫자 타입 컬럼에 대해 소수점을 제거(내림)하여 정수로 변환합니다.
-    단, NaN 값은 그대로 유지합니다.
+    DataFrame의 모든 숫자 타입 컬럼을 소수점 이하 2자리로 반올림합니다.
     """
     numeric_cols = df.select_dtypes(include=['float', 'int']).columns
-    df[numeric_cols] = df[numeric_cols].apply(
-        lambda x: x.apply(lambda v: int(v) if pd.notnull(v) else v)
-    )
+    df[numeric_cols] = df[numeric_cols].apply(lambda x: x.round(2))
     return df
 
 
-
+# ===============================================================
+# 보조지표 계산 함수
+# ===============================================================
 def add_technical_indicators(df, key):
     """
     OHLCV 데이터프레임에 기술적 보조지표를 추가합니다.
@@ -58,11 +57,9 @@ def add_technical_indicators(df, key):
     - RSI: 기간 14
     - MACD: EMA(12), EMA(26) 및 Signal(9)
     - Bollinger Bands: 20기간, 표준편차 2
-    - 이동평균선(MA): 4시간 차트는 20,50 / 일봉은 50,200 (기타 차트는 필요에 따라 추가)
+    - MA21, MA50, MA 200
 
-    :param df: OHLCV 데이터프레임 (컬럼: open, high, low, close, volume 등)
-    :param key: 차트의 시간프레임을 나타내는 key (예: '1h', '4h', '1d')
-    :return: 보조지표가 추가된 데이터프레임
+    계산 결과는 소수점 이하 2자리로 반올림합니다.
     """
     # RSI (14)
     delta = df['close'].diff()
@@ -71,29 +68,25 @@ def add_technical_indicators(df, key):
     avg_gain = gain.ewm(alpha=1 / 14, min_periods=14).mean()
     avg_loss = loss.ewm(alpha=1 / 14, min_periods=14).mean()
     rs = avg_gain / avg_loss
-    df['RSI'] = 100 - (100 / (1 + rs))
+    df['RSI'] = (100 - (100 / (1 + rs))).round(2)
 
-    # MACD (12,26,9)
+    # MACD (12, 26, 9)
     ema12 = df['close'].ewm(span=12, adjust=False).mean()
     ema26 = df['close'].ewm(span=26, adjust=False).mean()
-    df['MACD'] = ema12 - ema26
-    df['MACD_signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-    df['MACD_hist'] = df['MACD'] - df['MACD_signal']
+    df['MACD'] = (ema12 - ema26).round(2)
+    df['MACD_signal'] = (df['MACD'].ewm(span=9, adjust=False).mean()).round(2)
+    df['MACD_hist'] = (df['MACD'] - df['MACD_signal']).round(2)
 
     # Bollinger Bands (20, 2)
-    df['BB_middle'] = df['close'].rolling(window=20).mean()
-    df['BB_std'] = df['close'].rolling(window=20).std()
-    df['BB_upper'] = df['BB_middle'] + (2 * df['BB_std'])
-    df['BB_lower'] = df['BB_middle'] - (2 * df['BB_std'])
-    # 필요 시 df.drop('BB_std', axis=1, inplace=True)
+    df['BB_middle'] = df['close'].rolling(window=20).mean().round(2)
+    df['BB_std'] = df['close'].rolling(window=20).std().round(2)
+    df['BB_upper'] = (df['BB_middle'] + (2 * df['BB_std'])).round(2)
+    df['BB_lower'] = (df['BB_middle'] - (2 * df['BB_std'])).round(2)
 
     # 이동평균선 (MA)
-    if key == '4h':
-        df['MA20'] = df['close'].rolling(window=20).mean()
-        df['MA50'] = df['close'].rolling(window=50).mean()
-    elif key == '1d':
-        df['MA50'] = df['close'].rolling(window=50).mean()
-        df['MA200'] = df['close'].rolling(window=200).mean()
+    df['MA21'] = df['close'].rolling(window=21).mean().round(2)
+    df['MA50'] = df['close'].rolling(window=50).mean().round(2)
+    df['MA200'] = df['close'].rolling(window=200).mean().round(2)
 
     return df
 
@@ -105,13 +98,11 @@ def save_to_csv(filename, data, fieldnames):
     """
     지정된 CSV 파일에 데이터를 저장합니다.
     파일이 존재하면 이어 쓰고, 없으면 새로 생성합니다.
-    뉴스 데이터가 없는 경우(혹은 데이터에 지정된 필드 외의 항목이 있는 경우)
-    예외 처리 후 저장을 건너뛰도록 합니다.
     """
     folder_path = 'report_simple'
     file_path = os.path.join(folder_path, filename)
 
-    # 데이터가 비어있으면 그냥 넘어갑니다.
+    # 데이터가 비어있으면 저장하지 않습니다.
     if not data:
         print(f"{filename}에 저장할 데이터가 없습니다.")
         return
@@ -119,13 +110,13 @@ def save_to_csv(filename, data, fieldnames):
     file_exists = os.path.exists(file_path)
     try:
         with open(file_path, 'a', newline='', encoding='utf-8') as file:
-            # extrasaction='ignore' 옵션을 추가하여 필드 목록에 없는 키는 무시합니다.
             writer = csv.DictWriter(file, fieldnames=fieldnames, extrasaction='ignore')
             if not file_exists:
                 writer.writeheader()
             writer.writerows(data)
     except Exception as e:
         print(f"{filename} 저장 중 예외 발생: {e}")
+
 
 def save_ohlcv_to_csv(df, filename):
     """
@@ -193,11 +184,11 @@ def save_to_txt(report_folder, open_orders_data, total_assets_data, ohlcv_data_d
         file.write(total_assets_csv)
         file.write("\n\n")
 
-        # 각 OHLCV 데이터 기록
+        # 각 OHLCV 데이터 기록 (소수점은 2자리로 반올림)
         for key, df in ohlcv_data_dict.items():
             df_csv = df.reset_index()
             df_csv.rename(columns={'index': 'timestamp'}, inplace=True)
-            remove_decimals_from_df(df_csv)
+            df_csv = round_numeric_columns_in_df(df_csv)
             ohlcv_fieldnames = list(df_csv.columns)
             csv_str = list_dict_to_csv_string(df_csv.to_dict('records'), ohlcv_fieldnames, delimiter=';')
             file.write(f"-- ohlcv_{key}.csv\n")
@@ -241,22 +232,21 @@ def get_btc_price():
 
 def fetch_ohlcv_data(ticker, timeframe_configs):
     """
-    시간프레임 설정에 따라 OHLCV 데이터를 수집하고, CSV로 저장하며,
-    데이터프레임 딕셔너리 형태로 반환합니다.
-
-    :param ticker: 거래 종목 (예: "KRW-BTC")
-    :param timeframe_configs: 각 시간프레임 설정 리스트 (key, timeframe, count)
-    :return: { key: DataFrame, ... }
+    시간프레임 설정에 따라 OHLCV 데이터를 수집하고, 보조지표를 추가한 후
+    보조지표 계산을 위한 추가 데이터를 제거하여 최종 DataFrame을 반환합니다.
     """
     ohlcv_data = {}
     for config in timeframe_configs:
         key = config['key']
         tf = config['timeframe']
         count = config['count']
+        # 1일봉의 경우 MA200 계산을 위해 200행, 그 외에는 50행 추가
+        extra_rows = 200
         try:
-            df = pyupbit.get_ohlcv(ticker, tf, count)
-            # 보조지표 추가: 각 시간프레임별 MA, RSI, MACD, Bollinger Bands
+            df = pyupbit.get_ohlcv(ticker, tf, count + extra_rows)
             df = add_technical_indicators(df, key)
+            # 추가 데이터를 제거하여 최종 데이터만 사용
+            df = df.iloc[extra_rows:]
             ohlcv_data[key] = df
             save_ohlcv_to_csv(df, f"ohlcv_{key}.csv")
         except Exception as e:
@@ -346,33 +336,32 @@ def calculate_total_assets(krw_balance, btc_balance, btc_price):
 
 
 # ===============================================================
-# 메인 실행 함수
+# 메인 실행 함수 (리팩토링 및 가독성 개선)
 # ===============================================================
 def main():
-    # 환경변수 로드 및 Upbit 객체 생성
+    # 1. 환경변수 로드 및 Upbit 객체 생성
     load_dotenv()
     access_key = os.getenv("UPBIT_ACCESS_KEY")
     secret_key = os.getenv("UPBIT_SECRET_KEY")
     upbit = pyupbit.Upbit(access_key, secret_key)
 
-    # 보고서 폴더 준비
+    # 2. 보고서 폴더 준비
     report_folder = 'report_simple'
     prepare_report_folder(report_folder)
 
-    # 1) 구글 뉴스 스크래핑
+    # 3. 구글 뉴스 스크래핑 (뉴스 사용 안 함: 추후 활성화 가능)
     queries = [
         "Bitcoin price prediction", "Bitcoin volatility", "Bitcoin whale activity",
         "Bitcoin institutional adoption", "SEC Bitcoin ETF decision", "Bitcoin regulation",
         "Bitcoin mining difficulty", "Bitcoin network congestion", "US inflation CPI data",
         "Federal Reserve interest rates"
     ]
-    news_data = scrape_news(queries, max_articles_per_query=5, date_filter="w")
-    # news_data = []
+    # news_data = scrape_news(queries, max_articles_per_query=5, date_filter="w")
+    news_data = []  # 현재 뉴스 데이터 사용 안 함
     google_news_fieldnames = ['keyword', 'title', 'snippet', 'date', 'source', 'parsed_date']
-
     save_to_csv("googlenews.csv", news_data, google_news_fieldnames)
 
-    # 2) Upbit API를 통한 데이터 수집
+    # 4. Upbit API를 통한 데이터 수집
     try:
         balance_list = get_balance(upbit)
         open_orders_list = get_open_orders(upbit)
@@ -381,21 +370,18 @@ def main():
         print(f"API 호출 중 오류: {e}")
         return
 
-    if balance_list is None:
-        print("잔고 정보를 가져올 수 없습니다.")
-        return
-    if open_orders_list is None:
-        print("진행 중인 주문 정보를 가져올 수 없습니다.")
+    if balance_list is None or open_orders_list is None:
+        print("필수 데이터(잔고/주문)를 가져올 수 없습니다.")
         return
 
-    # 3) 잔고 및 주문 데이터 파싱
+    # 5. 잔고 및 주문 데이터 파싱
     balance_data, total_krw_balance, total_btc_balance = parse_balance_data(balance_list, btc_price)
     open_orders_data, total_krw_balance, total_btc_balance = parse_open_orders_data(
         open_orders_list, total_krw_balance, total_btc_balance
     )
 
-    btc_evaluation = total_btc_balance * btc_price
     total_balance = calculate_total_assets(total_krw_balance, total_btc_balance, btc_price)
+    btc_evaluation = total_btc_balance * btc_price
     today_date = datetime.now().strftime('%Y-%m-%d')
     total_assets_data = [{
         'timestamp': today_date,
@@ -405,29 +391,28 @@ def main():
         'btc_evaluation': btc_evaluation,
         'total_balance': f'{total_balance:.2f}'
     }]
-
     total_assets_fieldnames = ['timestamp', 'krw_balance', 'btc_balance', 'btc_market_price', 'btc_evaluation',
                                'total_balance']
     total_assets_file_path = os.path.join(report_folder, 'total_assets.csv')
     update_or_create_record(total_assets_file_path, total_assets_data, total_assets_fieldnames)
 
-    # 4) CSV 파일 저장 (balances, open_orders)
+    # 6. CSV 파일 저장 (balances, open_orders)
     balances_fieldnames = ['timestamp', 'currency', 'balance', 'market_price', 'evaluation_value']
-    save_to_csv('balances.csv', balance_data, balances_fieldnames)
     open_orders_fieldnames = ['order_id', 'side', 'price', 'volume', 'state', 'created_at']
+    save_to_csv('balances.csv', balance_data, balances_fieldnames)
     save_to_csv('open_orders.csv', open_orders_data, open_orders_fieldnames)
 
-    # 5) OHLCV 데이터 수집 및 저장 (시간프레임 설정만 수정하면 됩니다.)
+    # 7. OHLCV 데이터 수집 및 저장 (각 시간프레임별로 추가 데이터 포함 후 제거)
     ohlcv_timeframes = [
         {'key': '1h', 'timeframe': 'minute60', 'count': 300},
         {'key': '4h', 'timeframe': 'minute240', 'count': 200},
         {'key': '1d', 'timeframe': 'day', 'count': 150}
-        # {'key': '1w', 'timeframe': 'week', 'count': 30},  # 추가 가능
+        # 추가 시간프레임 가능
     ]
     ticker = "KRW-BTC"
     ohlcv_data_dict = fetch_ohlcv_data(ticker, ohlcv_timeframes)
 
-    # 6) 0.report.txt 생성 (모든 데이터를 CSV 형식으로 기록)
+    # 8. report.txt 생성 (모든 데이터를 CSV 형식으로 기록)
     save_to_txt(report_folder, open_orders_data, total_assets_data, ohlcv_data_dict, news_data)
 
     print("정상 처리되었습니다. report_simple 폴더 안에 CSV 파일들과 report.txt가 생성되었습니다.")
