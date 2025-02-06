@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from binance.client import Client
 from module.clear_folder import clear_folder
 from module.mbinance.position_history import build_position_history
-from module.get_googlenews import scrape_news  # 필요 시 사용
+# 구글 뉴스 관련 import 제거
 
 # ===============================================================
 # 보조지표 추가 함수
@@ -77,18 +77,19 @@ def save_to_csv(file_path, data, fieldnames):
             writer.writerow(["No Data"])
 
 
-def save_report_txt(position_df, futures_balance, report_txt_file, date_prefix, symbol, klines_dict, google_news_data):
+def save_report_txt(position_df, futures_balance, report_txt_file, symbol, klines_dict, intervals_to_save):
     """
-    report.txt 파일에 여러 데이터를 CSV 형식으로 기록
+    report.txt 파일에 여러 데이터를 CSV 형식으로 기록합니다.
+    intervals_to_save: report.txt에 저장할 캔들 데이터의 인터벌 리스트 (예: ["1m", "5m"])
     """
     with open(report_txt_file, 'w', encoding='utf-8', newline='') as txt_file:
         # 포지션 히스토리
-        txt_file.write(f"-- {date_prefix}_position_history (CSV)\n")
+        txt_file.write("-- position_history (CSV)\n")
         txt_file.write(position_df.to_csv(sep=';', index=False) if not position_df.empty else "No Data")
         txt_file.write("\n\n")
 
         # Futures 잔고
-        txt_file.write(f"-- {date_prefix}_futures_balance (CSV)\n")
+        txt_file.write("-- futures_balance (CSV)\n")
         if futures_balance:
             fieldnames = list(futures_balance[0].keys())
             writer = csv.DictWriter(txt_file, fieldnames=fieldnames, delimiter=';')
@@ -98,22 +99,14 @@ def save_report_txt(position_df, futures_balance, report_txt_file, date_prefix, 
             txt_file.write("No Data")
         txt_file.write("\n\n")
 
-        # 캔들 데이터 (보조지표 포함)
-        for interval, df in klines_dict.items():
-            txt_file.write(f"-- {date_prefix}_{symbol}_{interval}_klines (CSV)\n")
-            txt_file.write(df.to_csv(sep=';', index=False))
-            txt_file.write("\n\n")
-
-        # 구글 뉴스 데이터
-        txt_file.write(f"-- {date_prefix}_googlenews (CSV)\n")
-        if google_news_data:
-            fieldnames = list(google_news_data[0].keys())
-            writer = csv.DictWriter(txt_file, fieldnames=fieldnames, delimiter=';')
-            writer.writeheader()
-            writer.writerows(google_news_data)
-        else:
-            txt_file.write("No Data")
-        txt_file.write("\n\n")
+        # 선택한 캔들 데이터만 저장
+        for interval in intervals_to_save:
+            if interval in klines_dict:
+                txt_file.write(f"-- {symbol}_{interval}_klines (CSV)\n")
+                txt_file.write(klines_dict[interval].to_csv(sep=';', index=False))
+                txt_file.write("\n\n")
+            else:
+                txt_file.write(f"-- {symbol}_{interval}_klines: 데이터 없음\n\n")
 
 
 def save_klines_csv(client, folder, symbol, interval, limit, file_path):
@@ -123,15 +116,14 @@ def save_klines_csv(client, folder, symbol, interval, limit, file_path):
     extra_rows = 50
     total_rows = limit + extra_rows
 
+    # Binance API는 12열의 데이터를 반환합니다.
     raw_klines = client.futures_klines(symbol=symbol, interval=interval, limit=total_rows)
-    columns = ["Open Time", "Open", "High", "Low", "Close", "Volume",
-               "Close Time", "Quote Asset Volume", "Number of Trades",
-               "Taker Buy Base Asset Volume", "Taker Buy Quote Asset Volume", "Ignore"]
-    df = pd.DataFrame(raw_klines, columns=columns)
+    # 필요한 열: 인덱스 0~6 (Open Time, Open, High, Low, Close, Volume, Close Time)
+    df = pd.DataFrame(raw_klines)
+    df = df.iloc[:, 0:7]  # 0~6열 선택
+    df.columns = ["Open Time", "Open", "High", "Low", "Close", "Volume", "Close Time"]
 
-    numeric_cols = ["Open", "High", "Low", "Close", "Volume",
-                    "Quote Asset Volume", "Number of Trades",
-                    "Taker Buy Base Asset Volume", "Taker Buy Quote Asset Volume"]
+    numeric_cols = ["Open", "High", "Low", "Close", "Volume"]
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
@@ -184,19 +176,15 @@ def fetch_klines_data(client, symbol, intervals, candle_counts, extra_rows=50):
     각 interval 별로 추가 데이터를 포함하여 캔들 데이터를 수집한 후 보조지표를 추가하고,
     추가 데이터는 제거한 DataFrame들을 반환합니다.
     """
-    columns = ["Open Time", "Open", "High", "Low", "Close", "Volume",
-               "Close Time", "Quote Asset Volume", "Number of Trades",
-               "Taker Buy Base Asset Volume", "Taker Buy Quote Asset Volume", "Ignore"]
     klines_dict = {}
-    numeric_cols = ["Open", "High", "Low", "Close", "Volume",
-                    "Quote Asset Volume", "Number of Trades",
-                    "Taker Buy Base Asset Volume", "Taker Buy Quote Asset Volume"]
-
     for interval in intervals:
         total_rows = candle_counts[interval] + extra_rows
         raw_klines = client.futures_klines(symbol=symbol, interval=interval, limit=total_rows)
-        df = pd.DataFrame(raw_klines, columns=columns)
+        df = pd.DataFrame(raw_klines)
+        df = df.iloc[:, 0:7]
+        df.columns = ["Open Time", "Open", "High", "Low", "Close", "Volume", "Close Time"]
 
+        numeric_cols = ["Open", "High", "Low", "Close", "Volume"]
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
@@ -210,59 +198,48 @@ def fetch_klines_data(client, symbol, intervals, candle_counts, extra_rows=50):
     return klines_dict
 
 
-def save_reports(report_folder, date_prefix, symbol, futures_balance, position_df, google_news_data, klines_dict):
+def save_reports(report_folder, symbol, futures_balance, position_df, klines_dict, intervals_to_save):
     """
     여러 CSV 파일 및 report.txt 파일을 저장하고 각 파일의 경로를 반환합니다.
+    intervals_to_save: report.txt에 저장할 캔들 데이터의 인터벌 리스트
+                      (예: ["1m", "5m"])
     """
-    futures_balance_file = os.path.join(report_folder, f"{date_prefix}_futures_balance.csv")
+    futures_balance_file = os.path.join(report_folder, "futures_balance.csv")
     futures_balance_fieldnames = list(futures_balance[0].keys()) if futures_balance else []
     save_to_csv(futures_balance_file, futures_balance, futures_balance_fieldnames)
 
-    history_file = os.path.join(report_folder, f"{date_prefix}_{symbol}_position_history.csv")
+    history_file = os.path.join(report_folder, "position_history.csv")
     position_csv_data = position_df.to_dict('records')
     position_fieldnames = list(position_df.columns)
     save_to_csv(history_file, position_csv_data, position_fieldnames)
 
-    news_file = os.path.join(report_folder, f"{date_prefix}_googlenews.csv")
-    google_news_fieldnames = ['keyword', 'title', 'snippet', 'date', 'source', 'parsed_date']
-    save_to_csv(news_file, google_news_data, google_news_fieldnames)
+    report_txt_file = os.path.join(report_folder, "report.txt")
+    save_report_txt(position_df, futures_balance, report_txt_file, symbol, klines_dict, intervals_to_save)
 
-    report_txt_file = os.path.join(report_folder, f"{date_prefix}_report.txt")
-    save_report_txt(position_df, futures_balance, report_txt_file, date_prefix, symbol, klines_dict, google_news_data)
-
-    return futures_balance_file, history_file, news_file, report_txt_file
+    return futures_balance_file, history_file, report_txt_file
 
 
-def save_individual_klines_csv(client, intervals, candle_counts, report_folder, date_prefix, symbol):
+def save_individual_klines_csv(client, intervals, candle_counts, report_folder, symbol):
     """
     각 interval 별로 개별 캔들 CSV 파일을 저장합니다.
     """
     for interval in intervals:
-        filename = f"{date_prefix}_{symbol}_{interval}_klines.csv"
+        filename = f"{interval}_klines.csv"
         file_path = os.path.join(report_folder, filename)
         save_klines_csv(client, report_folder, symbol, interval, candle_counts[interval], file_path)
 
 
 # ===============================================================
-# Main 실행부 (리팩토링 후 깔끔한 구조)
+# Main 실행부
 # ===============================================================
 def main():
     client = load_env_and_create_client()
     symbol = "BTCUSDT"
-    date_prefix = datetime.now().strftime('%Y%m%d%H%M')
     report_folder = "report_futures"
     prepare_directories(report_folder)
 
     futures_balance = get_nonzero_futures_balance(client)
     position_df = build_position_dataframe(client, symbol)
-    # google_news_data = scrape_news([
-    #     "Bitcoin", "Bitcoin price prediction", "Bitcoin volatility", "Bitcoin whale activity",
-    #     "Bitcoin institutional adoption", "SEC Bitcoin ETF decision", "Bitcoin regulation",
-    #     "Bitcoin mining difficulty", "Bitcoin network congestion", "US inflation CPI data",
-    #     "Federal Reserve interest rates"
-    # ], max_articles_per_query=5, date_filter="w")
-    # 뉴스 사용 잠시 안하는 용도, 지우지 말 것
-    google_news_data = []
 
     intervals = ["1m", "5m", "15m", "1h", "4h", "1d"]
     candle_counts = {
@@ -277,16 +254,19 @@ def main():
     # 캔들 데이터 및 보조지표 수집 (추가 데이터 포함)
     klines_dict = fetch_klines_data(client, symbol, intervals, candle_counts, extra_rows=50)
 
-    # CSV 파일 및 report.txt 저장
-    futures_balance_file, history_file, news_file, report_txt_file = save_reports(
-        report_folder, date_prefix, symbol,
-        futures_balance, position_df, google_news_data, klines_dict
+    # report.txt에 저장할 캔들 인터벌 선택 (예: 1분, 5분 데이터만 저장)
+    # selected_intervals = ["1m", "5m"]
+    selected_intervals = ["1m", "5m", "15m", "1h", "4h", "1d"]
+
+    futures_balance_file, history_file, report_txt_file = save_reports(
+        report_folder, symbol,
+        futures_balance, position_df, klines_dict, selected_intervals
     )
 
-    # 개별 캔들 CSV 파일 저장
-    save_individual_klines_csv(client, intervals, candle_counts, report_folder, date_prefix, symbol)
+    # 개별 캔들 CSV 파일은 전체 인터벌에 대해 저장
+    save_individual_klines_csv(client, intervals, candle_counts, report_folder, symbol)
 
-    print(f"\nCSV 파일 및 보고서가 생성되었습니다:\n- Position History: {history_file}\n- Futures Balance: {futures_balance_file}\n- Google News CSV: {news_file}\n- Report (TXT): {report_txt_file}")
+    print(f"\nCSV 파일 및 보고서가 생성되었습니다:\n- Position History: {history_file}\n- Futures Balance: {futures_balance_file}\n- Report (TXT): {report_txt_file}")
 
 
 if __name__ == "__main__":

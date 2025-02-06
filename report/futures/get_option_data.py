@@ -51,7 +51,6 @@ class BinanceOptionsDataFetcher:
         (expiration은 YYMMDD 형식; 필요에 따라 수정)
         """
         try:
-            # 주의: 실제 API에서 사용되는 파라미터 이름 및 형식은 문서를 참고하여 조정해야 합니다.
             oi_endpoint = f"{self.base_url}/openInterest?underlyingAsset=BTC&expiration={expiration}"
             response = requests.get(oi_endpoint)
             response.raise_for_status()
@@ -129,6 +128,63 @@ class BinanceOptionsDataFetcher:
             print(f"에러 발생 (옵션 거래량 조회 실패): {e}")
             return None
 
+    def save_report_option_txt(self, df_btc, df_oi, df_iv, put_call_ratio, df_distribution, df_volume):
+        """
+        옵션 데이터를 report_option.txt 파일로 저장합니다.
+        각 섹션별로 CSV 형식의 데이터를 기록합니다.
+        """
+        report_file = os.path.join(self.save_path, "report_option.txt")
+        with open(report_file, 'w', encoding="utf-8", newline="") as f:
+            # BTC 옵션 데이터
+            f.write("-- BTC 옵션 데이터 (CSV)\n")
+            if df_btc is not None and not df_btc.empty:
+                f.write(df_btc.to_csv(sep=";", index=False))
+            else:
+                f.write("No BTC 옵션 데이터")
+            f.write("\n\n")
+
+            # 미결제약정 데이터
+            f.write("-- BTC 옵션 미결제약정 (Open Interest) (CSV)\n")
+            if df_oi is not None and not df_oi.empty:
+                f.write(df_oi.to_csv(sep=";", index=False))
+            else:
+                f.write("No Open Interest Data")
+            f.write("\n\n")
+
+            # 암시적 변동성 데이터
+            f.write("-- BTC 옵션 암시적 변동성 (IV) (CSV)\n")
+            if df_iv is not None and not df_iv.empty:
+                f.write(df_iv.to_csv(sep=";", index=False))
+            else:
+                f.write("No IV Data")
+            f.write("\n\n")
+
+            # Put/Call Ratio
+            f.write("-- BTC 옵션 Put/Call Ratio\n")
+            if put_call_ratio is not None:
+                f.write(str(put_call_ratio))
+            else:
+                f.write("No Put/Call Ratio Data")
+            f.write("\n\n")
+
+            # 옵션 행사가격 분포 데이터
+            f.write("-- BTC 옵션 행사가격 분포 (CSV)\n")
+            if df_distribution is not None and not df_distribution.empty:
+                f.write(df_distribution.to_csv(sep=";", index=False))
+            else:
+                f.write("No Strike Distribution Data")
+            f.write("\n\n")
+
+            # 옵션 거래량 데이터
+            f.write("-- BTC 옵션 거래량 (CSV)\n")
+            if df_volume is not None and not df_volume.empty:
+                f.write(df_volume.to_csv(sep=";", index=False))
+            else:
+                f.write("No Option Volume Data")
+            f.write("\n\n")
+
+        print(f"옵션 데이터 리포트 생성 완료: {report_file}")
+
 
 if __name__ == "__main__":
     fetcher = BinanceOptionsDataFetcher()
@@ -140,7 +196,6 @@ if __name__ == "__main__":
         print(df_btc.head())
 
         # 1. 미결제약정 (Open Interest)
-        # expiration 파라미터는 실제 옵션 체인에 따라 수정 필요 (예: "250214")
         df_oi = fetcher.get_open_interest(expiration="250214")
 
         # 2. 암시적 변동성 (IV)
@@ -156,5 +211,8 @@ if __name__ == "__main__":
 
         # 5. 옵션 거래량
         df_volume = fetcher.get_option_volume(df_btc)
+
+        # report_option.txt 파일로 옵션 데이터 추가 저장
+        fetcher.save_report_option_txt(df_btc, df_oi, df_iv, put_call_ratio, df_distribution, df_volume)
     else:
         print("비트코인 옵션 데이터를 가져오지 못했습니다.")

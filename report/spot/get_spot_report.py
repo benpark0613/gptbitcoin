@@ -6,7 +6,8 @@ from io import StringIO
 import pandas as pd
 import pyupbit
 from dotenv import load_dotenv
-from module.get_googlenews import scrape_news  # 필요 시 사용
+# 구글 뉴스 관련 import 제거
+# from module.get_googlenews import scrape_news  # 필요 시 사용
 
 
 # ===============================================================
@@ -57,7 +58,7 @@ def add_technical_indicators(df, key):
     - RSI: 기간 14
     - MACD: EMA(12), EMA(26) 및 Signal(9)
     - Bollinger Bands: 20기간, 표준편차 2
-    - MA21, MA50, MA 200
+    - MA21, MA50, MA200
 
     계산 결과는 소수점 이하 2자리로 반올림합니다.
     """
@@ -99,7 +100,7 @@ def save_to_csv(filename, data, fieldnames):
     지정된 CSV 파일에 데이터를 저장합니다.
     파일이 존재하면 이어 쓰고, 없으면 새로 생성합니다.
     """
-    folder_path = 'report_simple'
+    folder_path = 'report_spot'
     file_path = os.path.join(folder_path, filename)
 
     # 데이터가 비어있으면 저장하지 않습니다.
@@ -122,7 +123,7 @@ def save_ohlcv_to_csv(df, filename):
     """
     OHLCV DataFrame을 CSV 파일로 저장합니다.
     """
-    folder_path = 'report_simple'
+    folder_path = 'report_spot'
     file_path = os.path.join(folder_path, filename)
     df.to_csv(file_path, index=True)
     print(f"{filename}에 OHLCV 데이터가 저장되었습니다.")
@@ -158,10 +159,10 @@ def update_or_create_record(file_path, new_data, fieldnames):
         writer.writerows(rows)
 
 
-def save_to_txt(report_folder, open_orders_data, total_assets_data, ohlcv_data_dict, news_data):
+def save_to_txt(report_folder, open_orders_data, total_assets_data, ohlcv_data_dict):
     """
     report.txt에 각 CSV 데이터를 CSV 형식 그대로 기록합니다.
-    open_orders, total_assets, 각 OHLCV 데이터, 그리고 구글 뉴스 데이터를 포함합니다.
+    open_orders, total_assets, 각 OHLCV 데이터를 포함합니다.
     """
     report_path = os.path.join(report_folder, '0.report.txt')
 
@@ -169,7 +170,6 @@ def save_to_txt(report_folder, open_orders_data, total_assets_data, ohlcv_data_d
     open_orders_fieldnames = ['order_id', 'side', 'price', 'volume', 'state', 'created_at']
     total_assets_fieldnames = ['timestamp', 'krw_balance', 'btc_balance', 'btc_market_price', 'btc_evaluation',
                                'total_balance']
-    google_news_fieldnames = ['keyword', 'title', 'snippet', 'date', 'source', 'parsed_date']
 
     with open(report_path, 'w', encoding='utf-8') as file:
         # open_orders.csv 기록
@@ -194,12 +194,6 @@ def save_to_txt(report_folder, open_orders_data, total_assets_data, ohlcv_data_d
             file.write(f"-- ohlcv_{key}.csv\n")
             file.write(csv_str)
             file.write("\n\n")
-
-        # 구글 뉴스 기록
-        file.write("-- googlenews.csv\n")
-        google_news_csv_str = list_dict_to_csv_string(news_data, google_news_fieldnames, delimiter=';')
-        file.write(google_news_csv_str)
-        file.write("\n\n")
 
 
 # ===============================================================
@@ -240,7 +234,6 @@ def fetch_ohlcv_data(ticker, timeframe_configs):
         key = config['key']
         tf = config['timeframe']
         count = config['count']
-        # 1일봉의 경우 MA200 계산을 위해 200행, 그 외에는 50행 추가
         extra_rows = 200
         try:
             df = pyupbit.get_ohlcv(ticker, tf, count + extra_rows)
@@ -346,20 +339,10 @@ def main():
     upbit = pyupbit.Upbit(access_key, secret_key)
 
     # 2. 보고서 폴더 준비
-    report_folder = 'report_simple'
+    report_folder = 'report_spot'
     prepare_report_folder(report_folder)
 
-    # 3. 구글 뉴스 스크래핑 (뉴스 사용 안 함: 추후 활성화 가능)
-    queries = [
-        "Bitcoin price prediction", "Bitcoin volatility", "Bitcoin whale activity",
-        "Bitcoin institutional adoption", "SEC Bitcoin ETF decision", "Bitcoin regulation",
-        "Bitcoin mining difficulty", "Bitcoin network congestion", "US inflation CPI data",
-        "Federal Reserve interest rates"
-    ]
-    # news_data = scrape_news(queries, max_articles_per_query=5, date_filter="w")
-    news_data = []  # 현재 뉴스 데이터 사용 안 함
-    google_news_fieldnames = ['keyword', 'title', 'snippet', 'date', 'source', 'parsed_date']
-    save_to_csv("googlenews.csv", news_data, google_news_fieldnames)
+    # 3. 구글 뉴스 스크래핑 관련 부분 제거
 
     # 4. Upbit API를 통한 데이터 수집
     try:
@@ -413,9 +396,9 @@ def main():
     ohlcv_data_dict = fetch_ohlcv_data(ticker, ohlcv_timeframes)
 
     # 8. report.txt 생성 (모든 데이터를 CSV 형식으로 기록)
-    save_to_txt(report_folder, open_orders_data, total_assets_data, ohlcv_data_dict, news_data)
+    save_to_txt(report_folder, open_orders_data, total_assets_data, ohlcv_data_dict)
 
-    print("정상 처리되었습니다. report_simple 폴더 안에 CSV 파일들과 report.txt가 생성되었습니다.")
+    print("정상 처리되었습니다. report_spot 폴더 안에 CSV 파일들과 report.txt가 생성되었습니다.")
 
 
 if __name__ == "__main__":
