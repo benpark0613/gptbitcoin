@@ -14,7 +14,6 @@ from selenium.webdriver.common.by import By
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 # ✅ 상대 시간 변환 함수 ('3시간 전' → datetime 변환)
 def parse_relative_time_kor(time_str):
     pattern = re.compile(r"(\d+)(일|시간|분)\s*전")
@@ -33,7 +32,6 @@ def parse_relative_time_kor(time_str):
         return now - timedelta(minutes=value)
     return None
 
-
 # ✅ 랜덤 User-Agent 목록 (탐지 방지)
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.5481.77 Safari/537.36",
@@ -41,9 +39,8 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.96 Safari/537.36"
 ]
 
-
 # ✅ 구글 뉴스 URL 생성 함수
-def generate_url(query, start=0, date_filter="w"):
+def generate_url(query, start=0):
     base_url = "https://www.google.com/search"
     params = {
         "q": query,
@@ -51,11 +48,8 @@ def generate_url(query, start=0, date_filter="w"):
         "tbm": "nws",
         "start": start
     }
-    if date_filter:
-        params["tbs"] = f"qdr:{date_filter}"  # 최근 1주일 뉴스 필터링
     query_string = "&".join([f"{key}={value}" for key, value in params.items()])
     return f"{base_url}?{query_string}"
-
 
 # ✅ WebDriver 실행 함수 (탐지 방지 옵션 적용)
 def get_driver():
@@ -66,9 +60,8 @@ def get_driver():
     chrome_options.add_argument(f"user-agent={random.choice(USER_AGENTS)}")
     return webdriver.Chrome(options=chrome_options)
 
-
 # ✅ 구글 뉴스 스크래핑 함수 (각 키워드별 최대 5개 기사 수집)
-def scrape_news(queries, max_articles_per_query=5, date_filter="w"):
+def scrape_news(queries, max_articles_per_query=5):
     driver = get_driver()
     all_results = []
 
@@ -78,7 +71,7 @@ def scrape_news(queries, max_articles_per_query=5, date_filter="w"):
             start = 0
 
             while len(collected_results) < max_articles_per_query:
-                url = generate_url(query, start, date_filter)
+                url = generate_url(query, start)
                 driver.get(url)
 
                 # ✅ 스크롤 동작 추가 (봇 탐지 방지)
@@ -119,12 +112,8 @@ def scrape_news(queries, max_articles_per_query=5, date_filter="w"):
 
     return all_results
 
-
 # ✅ 테스트 실행 함수 (다중 키워드 뉴스 수집 후 CSV 저장)
 def save_to_csv(file_path, data, fieldnames):
-    """
-    data를 CSV 파일로 저장
-    """
     with open(file_path, 'w', newline='', encoding='utf-8') as f:
         if data:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -133,7 +122,6 @@ def save_to_csv(file_path, data, fieldnames):
         else:
             writer = csv.writer(f)
             writer.writerow(["No Data"])
-
 
 # ✅ 실행
 if __name__ == "__main__":
@@ -144,7 +132,7 @@ if __name__ == "__main__":
         "Federal Reserve interest rates", "Crypto market sentiment", "Bitcoin options and futures",
         "Bitcoin ETF flows", "Stablecoins impact on Bitcoin", "DeFi and Bitcoin correlation",
         "Geopolitical impact on Bitcoin", "Ethereum vs Bitcoin dominance"
-    ], max_articles_per_query=5, date_filter="w")
+    ], max_articles_per_query=5)
 
     google_news_fieldnames = ['keyword', 'title', 'snippet', 'date', 'source', 'parsed_date']
-    save_to_csv("googlenews.csv",google_news_data,google_news_fieldnames)
+    save_to_csv("googlenews.csv", google_news_data, google_news_fieldnames)

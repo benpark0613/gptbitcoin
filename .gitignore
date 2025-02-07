@@ -7,6 +7,5 @@ venv/
 .idea/
 *.csv
 *.txt
-*.json
 *.zip
 *.pyc

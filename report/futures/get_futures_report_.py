@@ -3,14 +3,13 @@
 import os
 import csv
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import pandas as pd
 import pandas_ta as ta  # pandas-ta 추가
 from dotenv import load_dotenv
 from binance.client import Client
 
 from module.clear_folder import clear_folder
-# closed_positions.py에서 필요한 함수 import
 from module.mbinance.closed_positions import (
     get_default_client,
     save_closed_position_csv,
@@ -22,28 +21,45 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 EXTRA_ROWS = 50
 
 
+import pandas as pd
+import pandas_ta as ta
+
 def add_technical_indicators(df):
-    """
-    df에는 다음 컬럼이 있어야 함:
-      ['Open Time','Open','High','Low','Close','Volume','Close Time']
-    pandas-ta를 이용하여 보조지표(EMA, ATR, RSI 등)를 계산
-
-    ADX(14)도 필요시 주석 해제하면 가능.
-    """
-
-    # EMA(9), EMA(21)
+    # 기존 지표 ---------------------------------------
     df['EMA9'] = ta.ema(close=df['Close'], length=9)
     df['EMA21'] = ta.ema(close=df['Close'], length=21)
-
-    # ATR(14)
     df['ATR'] = ta.atr(high=df['High'], low=df['Low'], close=df['Close'], length=14)
-
-    # RSI(14)
     df['RSI'] = ta.rsi(close=df['Close'], length=14)
+    adx_data = ta.adx(high=df['High'], low=df['Low'], close=df['Close'], length=14)
+    df['ADX'] = adx_data['ADX_14']
 
-    # ADX(14) - 필요한 차트(예: 4h)에서만 해도 됨
-    # adx_data = ta.adx(high=df['High'], low=df['Low'], close=df['Close'], length=14)
-    # df['ADX'] = adx_data['ADX_14']  # pandas-ta는 "ADX_14", "DMP_14", "DMN_14" 식으로 컬럼명 생성
+    # 볼린저 밴드(기간=20, 표준편차=2.0) --------------
+    bbands = ta.bbands(df['Close'], length=20, std=2.0)
+    df['BBL'] = bbands[f'BBL_20_2.0']
+    df['BBM'] = bbands[f'BBM_20_2.0']
+    df['BBU'] = bbands[f'BBU_20_2.0']
+    df['BBB'] = bbands[f'BBB_20_2.0']
+    df['BBP'] = bbands[f'BBP_20_2.0']
+
+    # 거래량 이동평균(20) ----------------------------
+    df['VOL_MA20'] = ta.sma(df['Volume'], length=20)
+
+    # OBV(온밸런스 볼륨) -----------------------------
+    df['OBV'] = ta.obv(close=df['Close'], volume=df['Volume'])
+
+    # 소수점 처리 ------------------------------------
+    df['EMA9'] = df['EMA9'].round(2)
+    df['EMA21'] = df['EMA21'].round(2)
+    df['ATR'] = df['ATR'].round(2)
+    df['RSI'] = df['RSI'].round(2)
+    df['ADX'] = df['ADX'].round(2)
+    df['BBL'] = df['BBL'].round(2)
+    df['BBM'] = df['BBM'].round(2)
+    df['BBU'] = df['BBU'].round(2)
+    df['BBB'] = df['BBB'].round(2)
+    df['BBP'] = df['BBP'].round(4)
+    df['VOL_MA20'] = df['VOL_MA20'].round(2)
+    df['OBV'] = df['OBV'].round(2)
 
     return df
 
@@ -185,9 +201,11 @@ def load_env_and_create_client():
 def get_nonzero_futures_balance(client):
     try:
         futures_balance = client.futures_account_balance()
+        # 0이 아닌 balance만 필터
         result = [item for item in futures_balance if float(item["balance"]) != 0.0]
 
         for item in result:
+            # updateTime 처리
             if "updateTime" in item:
                 utc_time = datetime.utcfromtimestamp(item["updateTime"] / 1000.0)
                 seoul_time = utc_time + timedelta(hours=9)
@@ -195,11 +213,26 @@ def get_nonzero_futures_balance(client):
             else:
                 item["updateTime(UTC+9)"] = None
 
+            # 소수점 둘째 자리로 반올림할 컬럼
+            columns_to_round = [
+                "balance",
+                "crossWalletBalance",
+                "crossUnPnl",
+                "availableBalance",
+                "maxWithdrawAmount"
+            ]
+
+            # 항목이 존재하면 반올림 처리
+            for col in columns_to_round:
+                if col in item:
+                    item[col] = round(float(item[col]), 2)
+
         logging.info("Non-zero futures balance retrieved")
         return result
     except Exception as e:
         logging.error("Error retrieving futures balance: %s", e)
         raise
+
 
 
 def fetch_klines_data(client, symbol, intervals_config, extra_rows=EXTRA_ROWS):
@@ -285,12 +318,11 @@ def main():
 
         # 2) interval 설정
         intervals_config = {
-            "1m": {"rows": 180},
-            "5m": {"rows": 60},
-            "15m": {"rows": 24},
-            "1h": {"rows": 48},
-            "4h": {"rows": 30},
-            "1d": {"rows": 14}
+            "3m": {"rows": 240},  # 3분봉 240개 → 약 12시간 분량
+            "5m": {"rows": 144},  # 5분봉 144개 → 약 12시간 분량
+            "15m": {"rows": 96},  # 15분봉 96개 → 약 1일(24h)
+            "1h": {"rows": 48},  # 1시간봉 48개 → 약 2일(48h)
+            "4h": {"rows": 30}  # 4시간봉 30개 → 약 5일
         }
 
         # 3) 캔들 데이터 수집 & 보조지표 계산
