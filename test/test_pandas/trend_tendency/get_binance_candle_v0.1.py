@@ -271,6 +271,31 @@ def save_to_csv(df, filename):
     print(f"데이터가 '{filename}' 파일로 저장되었습니다.")
 
 
+def save_csv_to_txt(csv_file_path, txt_file_path):
+    # 1) 안내 문구 준비
+    instructions = (
+        "1. 반드시 지금 받은 데이터를 새로 분석하세요.\n"
+        "2. 반드시 모든 보조지표를 분석하세요.\n"
+        "3. 현재 추세장인지 횡보장인지 말하세요.\n"
+        "4. 결론에는 점수를 제시해야합니다. 점수: -100점 ~ 100점 "
+        "(-100점에 가까울수록 내림추세, 100점에 가까울수록 오름추세, 0점에 가까울수록 횡보)"
+    )
+
+    # 2) CSV 내용 읽기
+    with open(csv_file_path, "r", encoding="utf-8-sig") as f:
+        csv_data = f.read()
+
+    # 3) TXT 파일에 쓰기
+    with open(txt_file_path, "w", encoding="utf-8-sig") as f:
+        # 안내 문구 먼저 기록
+        f.write(instructions)
+        # 줄바꿈 두 번
+        f.write("\n\n")
+        # CSV 데이터 기록
+        f.write(csv_data)
+
+    print(f"'{txt_file_path}' 파일로 저장이 완료되었습니다.")
+
 def main():
     client = init_binance_client()
 
@@ -312,6 +337,10 @@ def main():
     df_final = pd.concat([df_last_10, df_without_opentime], axis=0)
     csv_filename_final = os.path.join(folder_name, f"{timestamp}_{symbol}_{interval}_final_recent10_future.csv")
     save_to_csv(df_final, csv_filename_final)
+
+    # 바로 TXT 파일로도 저장 (csv_filename_final => txt_filename_final)
+    txt_filename_final = os.path.join(folder_name, f"{timestamp}_{symbol}_{interval}_final_recent10_future.txt")
+    save_csv_to_txt(csv_filename_final, txt_filename_final)
 
 
 if __name__ == '__main__':
