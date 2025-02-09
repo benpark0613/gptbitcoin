@@ -1,0 +1,166 @@
+"1": "당신의 지침을 브리핑 하세요",
+"2": "지금부터 데이터를 전달하겠습니다. 데이터 분석이 끝나면 완료라고만 하세요",
+"3": "전달한 csv, 이미지 데이터를 모두 지침에 맞게 분석한 후, 지침에 따라서 매매의견을 작성하세요"
+"4": "이번 거래 결과입니다. 피드백하세요."
+"5": "피드백과 대화 내용을 반영해 전략지침을 업데이트 작성하라"
+
+
+
+
+{
+  "strategyName": "BTCUSDT ChatGPT Max-Potential Strategy",
+  "version": "4.1",
+
+  "marketContext": {
+    "targetSymbol": "BTCUSDT",
+    "timeFrames": ["1m", "5m", "15m"],
+    "priorityTimeFrames": ["1m", "5m"],
+    "optionalTimeFrames": ["1h", "4h"],
+    "description": "ChatGPT 최적 분석을 통한 단타(1m,5m) + 추세 필터(15m) 전략. 상황에 따라 1h,4h로 추가 검증."
+  },
+
+  "entryLogic": {
+    "description": "ChatGPT가 시장 데이터를 해석해 최적 진입 시점을 찾아내도록 함. 사용자는 OHLCV + 보조지표 + 차트 캡처를 순차 제공.",
+    "primaryPatterns": [
+      {
+        "patternName": "EMA Crossover & Volume Surge",
+        "condition": "1m, 5m에서 EMA9>EMA21(롱) or EMA9<EMA21(숏) & 직전 거래량 이동평균 대비 120%↑ 시 진입 가속"
+      },
+      {
+        "patternName": "Key Reversal Candles / Price Action",
+        "condition": "1m(혹은 5m)에서 특정 반전형 캔들(핀바, 인사이드바 돌파 등) 발생 & ChatGPT가 볼린저, RSI 등 종합 해석"
+      }
+    ],
+    "trendFilter": {
+      "indicator": "ADX",
+      "timeFrame": "15m",
+      "threshold": 25,
+      "logic": "ADX≥25 → 추세장, ChatGPT는 롱/숏 시그널이 추세 방향과 일치하면 강하게 제안"
+    },
+    "overboughtOversold": {
+      "indicator": "RSI",
+      "timeFrame": "5m",
+      "logic": "RSI≥70 → 과매수, RSI≤30 → 과매도. ChatGPT는 분할진입 또는 역추세 스캘핑 시 판단 근거"
+    },
+    "volatilityFilter": {
+      "indicator": "ATR",
+      "timeFrame": "15m",
+      "logic": "15m ATR이 급증하면 변동성 장, 급감하면 박스권. ChatGPT가 진입·손절 폭 조정"
+    },
+    "executionDelayHandling": {
+      "maxPriceDeviationPercent": 0.5,
+      "logic": "ChatGPT 제안 진입가와 실제 체결가 괴리 0.5% 이상 → 진입 재검토"
+    },
+    "note": "최종 판단은 ChatGPT가 지표+캔들+패턴+거래량 종합 해석 후 LONG/SHORT/HOLD 제시"
+  },
+
+  "exitLogic": {
+    "stopLoss": {
+      "type": "ATR-based",
+      "timeFrames": ["5m", "15m"],
+      "multiplier": 1.5,
+      "description": "ATR 기반 손절폭 설정, ChatGPT는 시장 변동성 재분석 후 SL 조정 가능"
+    },
+    "takeProfit": {
+      "type": "Dynamic riskReward",
+      "baseRiskRewardRatio": 2.0,
+      "dynamicAdjustment": {
+        "lowVolatilityRRange": [1.5, 1.8],
+        "highVolatilityRRange": [2.0, 2.2]
+      },
+      "description": "기본 R:R=2.0, 변동성 낮으면 1.5~1.8, 높으면 2.2까지 상향"
+    },
+    "partialExit": {
+      "enabled": true,
+      "logic": "1차 목표(R:R=1.2~1.5)에 도달 시 30~50% 청산 후 나머지 지속 보유. ChatGPT는 시장 상황 재분석 가능"
+    },
+    "trailingStop": {
+      "enabled": true,
+      "logic": "1차 목표 달성 후, 진입가 혹은 (가중 ATR ×1.0)로 스톱 조정"
+    }
+  },
+
+  "riskManagement": {
+    "dailyMaxLoss": 3,
+    "positionSize": {
+      "riskPerTradePercent": 20.0,
+      "logic": "매우 공격적. 최대 손실은 계좌 20%까지 허용. ChatGPT가 상황 따라 10~20% 범위에서 조정 가능"
+    },
+    "leverageRange": {
+      "recommendedMin": 5,
+      "recommendedMax": 10,
+      "logic": "기존 3~5배보다 공격적 레버리지(최대 10배). ChatGPT는 시장 변동성, SL 거리 감안해 적용"
+    },
+    "exchangeLotRules": {
+      "enabled": true,
+      "logic": "바이낸스 선물 최소 주문규정(0.001 BTC) 충족"
+    },
+    "maxTradeFrequency": {
+      "enabled": true,
+      "logic": "하루 5~7회(역추세 스캘핑 포함 2회 추가 허용)",
+      "reasoning": "과도한 매매 방지, ChatGPT도 승률 높일 수 있는 신호에 집중"
+    },
+    "description": "연속 3회 손절 시 당일 매매 중단. 최대 20% 손실 감수 가능(고위험)"
+  },
+
+  "noiseFilter": {
+    "multiTimeFrameConfirmation": {
+      "enabled": true,
+      "logic": "1m 신호 발생 시 5m, 15m 추세와 대체로 일치하는지 ChatGPT가 판단"
+    },
+    "choppyMarketAvoidance": {
+      "enabled": true,
+      "indicator": "RSI",
+      "threshold": {
+        "lower": 45,
+        "upper": 55
+      },
+      "description": "RSI 45~55면 모멘텀 부족 박스권 → HOLD 제안 가능"
+    }
+  },
+
+  "chatGPTIntegration": {
+    "feedbackCycle": {
+      "steps": [
+        "1) 사용자: 전략지침(4.1) 브리핑",
+        "2) 사용자: OHLCV·보조지표·이미지 전달",
+        "3) ChatGPT: 매매의견(LONG/SHORT/HOLD, SL, TP 등) 제시",
+        "4) 사용자: 매매 실행, 실거래 결과 공유",
+        "5) ChatGPT: 피드백, 전략 추가 개선"
+      ]
+    },
+    "opinionOutputFormat": {
+      "fieldsQuickInput": [
+        "Position (LONG/SHORT/HOLD)",
+        "Leverage",
+        "Size (% of balance)",
+        "Entry Price Range",
+        "Stop Loss",
+        "Take Profit / Partial Exit"
+      ],
+      "fieldsDetailedRationale": [
+        "Brief Rationale (지표, 거래량, 패턴, 변동성 근거)"
+      ],
+      "note": "ChatGPT가 종합적으로 판단하여 제시. HOLD 가능"
+    },
+    "additionalGuidelines": {
+      "useHyphenForRanges": "예) 23450-23500",
+      "provideSingleBestValue": "SL·TP는 단일값(부분청산은 단계별)"
+    }
+  },
+
+  "evaluationNotes": {
+    "analysis": [
+      "ChatGPT가 지표+패턴+거래량 통합 해석. 너무 많은 지표 중복은 지양",
+      "HOLD(관망) 제시 가능, 부분청산·트레일링 적극 활용"
+    ],
+    "improvementPlan": [
+      "레버리지·포지션 사이즈를 유연히 조정해 고수익 추구 가능",
+      "단, 20% 손실 위험 감수. 변동성 매우 큰 구간에선 분할 진입·분할 익절 권장"
+    ],
+    "executionDelaySlippageHandling": {
+      "description": "체결가 vs. ChatGPT 제안 진입가 괴리 1% 이상 시 재분석",
+      "logic": "급등락 슬리피지 방지"
+    }
+  }
+}

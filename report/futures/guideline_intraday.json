@@ -1,0 +1,212 @@
+"1": "당신의 지침을 브리핑 하세요",
+"2": "지금부터 데이터를 전달하겠습니다. 데이터 분석이 끝나면 완료라고만 하세요",
+"3": "전달한 csv, 이미지 데이터를 모두 지침에 맞게 분석한 후, 지침에 따라서 매매의견을 작성하세요"
+"4": "이번 거래 결과입니다. 피드백하세요."
+"5": "피드백과 대화 내용을 반영해 전략지침을 업데이트 작성하라"
+
+
+{
+  "strategyName": "BTCUSDT Futures Adaptive Strategy",
+  "version": "2.8",
+  "marketContext": {
+    "targetSymbol": "BTCUSDT",
+    "timeFrames": ["3m", "5m", "15m", "1h", "4h"],
+    "priorityTimeFrames": ["3m", "5m"],
+    "description": "단기(3m,5m) 패턴 및 지표 + 중기(15m,1h,4h) 추세·변동성 필터 + 부분 손절/익절 + ChatGPT 반복 피드백"
+  },
+
+  "entryLogic": {
+    "description": "3m,5m,15m 차트에서 거래량 급등/패턴 및 EMA 교차 시 진입. 15m/1h/4h ADX·ATR로 필터링",
+    "primaryPatterns": [
+      {
+        "patternName": "Triangle / Wedge / Double Bottom",
+        "condition": "3m 차트에서 패턴 발생 + 거래량이 직전 평균 대비 120% 이상 증가 + 패턴 돌파 시 진입"
+      },
+      {
+        "patternName": "EMA(9,21) Crossover",
+        "condition": "3m에서 EMA(9)가 EMA(21) 상향 돌파 → 롱, 하향 돌파 → 숏 (5m 차트 동일 방향이면 신뢰도 상승)"
+      }
+    ],
+    "trendFilter": {
+      "indicator": "ADX",
+      "timeFrame": "15m",
+      "threshold": 25,
+      "logic": "ADX≥25 → 추세장. 3m,5m의 매매 신호가 추세 방향과 일치하면 진입, 불일치 시 관망 또는 스캘핑 축소"
+    },
+    "trendAccelerationCheck": {
+      "enabled": true,
+      "logic": "추세장(ADX≥25)이라도 ADX가 빠르게 상승 + RSI≥70 → 과열 가능성. 분할 진입 혹은 진입규모 축소"
+    },
+    "volatilityFilter": {
+      "indicator": "ATR",
+      "timeFrame": "15m",
+      "dynamicLogic": "현재 ATR < (최근 N봉 평균 ATR × 0.8) → 저변동성(박스권)으로 판단",
+      "logic": "박스권인 경우, 타 지표가 강력하지 않다면 진입 보류"
+    },
+    "counterTrendScalping": {
+      "enabled": true,
+      "logic": "ADX가 25 이하로 하락 전환 + RSI 과매수(≥70) 또는 과매도(≤30) 시 역추세 스캘핑(3m, 5m 기준)",
+      "entryCriteria": "3m에서 반전형 캔들 + 거래량 증가 확인 후 소규모(계좌 3~5%) 진입",
+      "exitCriteria": "±1% 1차 목표 + ATR×0.5 트레일링"
+    },
+    "executionDelayHandling": {
+      "enabled": true,
+      "maxPriceDeviationPercent": 0.5,
+      "logic": "예상 진입가 대비 ±0.5% 이상 차이 발생 시, R:R 재검토(2.0 미만이면 진입 포기 또는 SL/TP 재조정)"
+    },
+    "noTradeOrHoldCondition": {
+      "enabled": true,
+      "logic": "지표(EMA, ADX, RSI, ATR 등)가 서로 충돌하거나 방향성이 애매할 경우 HOLD. 특히 RSI 45~55, ATR 급감 시 관망 강화",
+      "description": "추가 모니터링 후 확률 높은 구간에만 재진입"
+    }
+  },
+
+  "exitLogic": {
+    "stopLoss": {
+      "type": "Multi-TimeFrame ATR-based",
+      "timeFrames": ["5m", "15m"],
+      "multiplier": 1.5,
+      "description": "5m·15m ATR의 가중 평균값 ×1.5를 SL로 설정해 단기 변동성 반영"
+    },
+    "takeProfit": {
+      "type": "Dynamic riskReward",
+      "baseRiskRewardRatio": 2.0,
+      "dynamicAdjustment": {
+        "lowVolatilityRRange": [1.5, 1.8],
+        "highVolatilityRRange": [2.0, 2.2],
+        "logic": "시장의 변동성(ATR, Bollinger 등)에 따라 R:R을 1.5~2.2 구간 내에서 조정"
+      },
+      "description": "기본 R:R=2.0, 변동성 낮을 때 1.5~1.8, 높으면 2.0~2.2"
+    },
+    "partialExit": {
+      "enabled": true,
+      "logic": "R:R=1.2~1.5 구간 도달 시 30~50% 익절 후, 나머지 포지션은 최종 목표(R:R=2.0±α)까지 보유",
+      "example": "부분청산 후 진입가 혹은 ATR값으로 SL 이동"
+    },
+    "trailingStop": {
+      "enabled": true,
+      "logic": "1차 목표 달성 후 3m·5m ATR 참고해 점진적 트레일링"
+    }
+  },
+
+  "riskManagement": {
+    "dailyMaxLoss": 3,
+    "positionSize": {
+      "riskPerTradePercent": 10.0,
+      "logic": "한 번의 트레이드에 계좌의 10% 리스크. 공격적 운용"
+    },
+    "exchangeLotRules": {
+      "enabled": true,
+      "logic": "바이낸스 선물 최소 주문 수량 0.001 BTC 이상 준수"
+    },
+    "maxTradeFrequency": {
+      "enabled": true,
+      "logic": "하루 5~7회 이하 진입, 역추세 스캘핑은 추가 2회 허용",
+      "reasoning": "오버트레이딩 방지 및 고확률 신호 집중"
+    },
+    "description": "일일 3회 손절 시 매매 중단. 연속 손절 빈도 모니터링 및 필요 시 조정"
+  },
+
+  "noiseFilter": {
+    "multiTimeFrameConfirmation": {
+      "enabled": true,
+      "logic": "3m 신호 발생 시 5m, 15m도 일치하면 신뢰도 상승"
+    },
+    "choppyMarketAvoidance": {
+      "enabled": true,
+      "indicator": "RSI",
+      "threshold": {
+        "lower": 45,
+        "upper": 55
+      },
+      "description": "RSI 45~55 구간에서는 모멘텀이 모호, 관망 또는 포지션 축소"
+    }
+  },
+
+  "chatGPTIntegration": {
+    "feedbackCycle": {
+      "description": "사용자와 ChatGPT 간 피드백을 반복하며 매매 성능 극대화",
+      "steps": [
+        "1) 전략지침(버전 2.8) 브리핑",
+        "2) OHLCV, 차트 이미지, CSV(최신 데이터) 전달",
+        "3) ChatGPT 매매의견(롱/숏/관망, SL, TP 등) 제시",
+        "4) 사용자 매매 실행 후 결과 공유",
+        "5) ChatGPT 재분석·피드백 → 전략 수정"
+      ]
+    },
+    "conversationFlow": {
+      "description": "1~19단계 순서로 데이터 주고받기",
+      "steps": {
+        "step1": "사용자가 전략지침 전달",
+        "step2": "'전략지침 브리핑' 명령",
+        "step3": "ChatGPT 브리핑 완료",
+        "step4": "사용자가 '지금부터 데이터 전달...' 명령",
+        "step5": "ChatGPT '완료' 응답",
+        "step6": "사용자가 OHLCV 자료 순차 전달(최신 차트 이미지 포함)",
+        "step7": "ChatGPT 분석 후 '완료'만 응답",
+        "step8": "사용자가 '전략지침에 맞게 매매의견 작성' 명령",
+        "step9": "ChatGPT가 매매의견 제시 (롱/숏/관망, SL, TP 등)",
+        "step10": "사용자가 거래 실행",
+        "step11": "주기적으로 차트 캡처(최신 차트)를 전달",
+        "step12": "ChatGPT가 의견 업데이트",
+        "step13": "사용자 실행",
+        "step14": "거래 종료 후 trade history·position history 전달 + 피드백 요청",
+        "step15": "ChatGPT가 피드백 작성",
+        "step16": "사용자, 전략지침 재전달 + 업데이트 요청",
+        "step17": "ChatGPT가 새 지침 작성",
+        "step18": "사용자가 새 지침 + 피드백 json 정리",
+        "step19": "사용자가 업데이트된 지침을 ChatGPT에 전달, 반복"
+      }
+    },
+    "opinionOutputFormat": {
+      "description": "ChatGPT가 매매의견을 작성할 때 필요한 기본 항목",
+      "fieldsQuickInput": [
+        "Position (LONG/SHORT/HOLD)",
+        "Leverage",
+        "Size (% of balance)",
+        "Entry Price Range",
+        "Stop Loss",
+        "Take Profit / Partial Exit"
+      ],
+      "fieldsDetailedRationale": [
+        "Brief Rationale (패턴 근거, 지표 근거, 거래량 근거 등)"
+      ],
+      "note": "신호가 모호하거나 지표 충돌 시 Position을 HOLD로 기재"
+    },
+    "additionalGuidelines": {
+      "useHyphenForRanges": "가격 범위 표현 시 하이픈(-) 사용 권장",
+      "provideSingleBestValue": "SL·TP는 단일 최적값, 부분청산 시 단계별 목표가 제시"
+    }
+  },
+
+  "evaluationNotes": {
+    "recentResults": {},
+    "analysis": [
+      "3m,5m,15m 중심 노이즈 주의",
+      "부분 손절·익절로 큰 변동성에도 유연 대응",
+      "ChatGPT 피드백으로 지속 개선"
+    ],
+    "targets": {
+      "desiredWinRate": 50.0,
+      "desiredRiskReward": 2.0,
+      "desiredProfitFactor": 1.5
+    },
+    "improvementPlan": [
+      "Forward Test를 통해 RSI, ADX 등 지표의 임계값 점진 조정",
+      "과도하게 필터가 겹치지 않도록 중복 지표 축소 고려",
+      "ChatGPT 피드백으로 신호 정확도와 매매 빈도 간 균형 유지"
+    ],
+    "overfittingPrevention": {
+      "description": "지표 복합 사용 시 중복/세밀한 파라미터로 인한 과적합을 방지",
+      "recommendations": [
+        "RSI와 ADX가 동시에 추세 필터 역할을 할 때는 한쪽에 우선순위 적용 고려",
+        "EMA 교차는 진입 트리거, ATR은 변동성·SL/TP 조정, RSI는 과열/과매수 판단 등 역할 분담",
+        "실거래 데이터 분석(백테스트+Forward Test) 결과에 따라 지표·파라미터 조정"
+      ]
+    },
+    "executionDelaySlippageHandling": {
+      "description": "체결가와 예상 진입가의 괴리가 1% 이상이면 재검토 후 주문 취소 또는 SL/TP 재조정",
+      "logic": "단기 급등락에 의한 슬리피지 방지"
+    }
+  }
+}

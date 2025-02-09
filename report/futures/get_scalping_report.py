@@ -24,30 +24,41 @@ EXTRA_ROWS = 50
 import pandas as pd
 import pandas_ta as ta
 
-def add_technical_indicators(df):
-    # 기존 지표 ---------------------------------------
+def add_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    BTCUSDT ChatGPT Max-Potential Strategy 용 핵심 지표를 계산.
+    EXTRA_ROWS=50개는 별도 로직에서 추가로 받아온 뒤 최종 제외 처리.
+    """
+
+    # 1) 단기 추세 (EMA)
     df['EMA9'] = ta.ema(close=df['Close'], length=9)
     df['EMA21'] = ta.ema(close=df['Close'], length=21)
+
+    # 2) 변동성 지표 (ATR)
     df['ATR'] = ta.atr(high=df['High'], low=df['Low'], close=df['Close'], length=14)
+
+    # 3) 모멘텀 지표 (RSI)
     df['RSI'] = ta.rsi(close=df['Close'], length=14)
+
+    # 4) 추세 강도 (ADX)
     adx_data = ta.adx(high=df['High'], low=df['Low'], close=df['Close'], length=14)
     df['ADX'] = adx_data['ADX_14']
 
-    # 볼린저 밴드(기간=20, 표준편차=2.0) --------------
+    # 5) Bollinger Bands (기간=20, 표준편차=2.0)
     bbands = ta.bbands(df['Close'], length=20, std=2.0)
-    df['BBL'] = bbands[f'BBL_20_2.0']
-    df['BBM'] = bbands[f'BBM_20_2.0']
-    df['BBU'] = bbands[f'BBU_20_2.0']
-    df['BBB'] = bbands[f'BBB_20_2.0']
-    df['BBP'] = bbands[f'BBP_20_2.0']
+    df['BBL'] = bbands['BBL_20_2.0']
+    df['BBM'] = bbands['BBM_20_2.0']
+    df['BBU'] = bbands['BBU_20_2.0']
+    df['BBB'] = bbands['BBB_20_2.0']  # 볼린저 밴드 폭
+    df['BBP'] = bbands['BBP_20_2.0']  # %B (%밴드 위치)
 
-    # 거래량 이동평균(20) ----------------------------
+    # 6) 거래량 이동평균(20)
     df['VOL_MA20'] = ta.sma(df['Volume'], length=20)
 
-    # OBV(온밸런스 볼륨) -----------------------------
+    # 7) OBV(온밸런스 볼륨)
     df['OBV'] = ta.obv(close=df['Close'], volume=df['Volume'])
 
-    # 소수점 처리 ------------------------------------
+    # 소수점 처리
     df['EMA9'] = df['EMA9'].round(2)
     df['EMA21'] = df['EMA21'].round(2)
     df['ATR'] = df['ATR'].round(2)
@@ -318,11 +329,11 @@ def main():
 
         # 2) interval 설정
         intervals_config = {
-            "3m": {"rows": 240},  # 3분봉 240개 → 약 12시간 분량
+            "1m": {"rows": 720},  # 1분봉 720개 → 약 12시간 분량
             "5m": {"rows": 144},  # 5분봉 144개 → 약 12시간 분량
-            "15m": {"rows": 96},  # 15분봉 96개 → 약 1일(24h)
-            "1h": {"rows": 48},  # 1시간봉 48개 → 약 2일(48h)
-            "4h": {"rows": 30}  # 4시간봉 30개 → 약 5일
+            "15m": {"rows": 48},  # 15분봉 48개 → 약 12시간 분량
+            "1h": {"rows": 24},  # 1시간봉 24개 → 약 1일 분량(옵션)
+            "4h": {"rows": 6}  # 4시간봉 6개  → 약 1일(옵션: 큰 추세 확인용)
         }
 
         # 3) 캔들 데이터 수집 & 보조지표 계산
