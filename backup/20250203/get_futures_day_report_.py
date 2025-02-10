@@ -34,7 +34,7 @@ def main():
     # rss_news_list = get_top_10_recent_news("https://news.google.com/rss/search?q=bitcoin&hl=en&gl=US")
 
     # 4) 저장 폴더 경로 지정
-    report_path = "../../report/futures/report_day"
+    report_path = "../20250210/futures/report_day"
     # 파일 이름 접두어(년월일시분)
     date_prefix = datetime.now().strftime('%Y%m%d%H%M')
 
