@@ -1,13 +1,11 @@
 python-dotenv
-openai
 pyupbit
-ta
 selenium
 webdriver-manager
 Pillow
-youtube-transcript-api
-streamlit
 plotly
 schedule
-BeautifulSoup
+beautifulsoup4
 python-binance
+pandas-ta
+pandas

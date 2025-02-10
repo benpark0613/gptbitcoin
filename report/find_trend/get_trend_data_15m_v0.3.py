@@ -1,12 +1,11 @@
-import os
 import datetime
-import pandas as pd
-from dotenv import load_dotenv
-from binance.client import Client
-import pandas_ta as ta
-import warnings
+import os
 
-warnings.filterwarnings("ignore", category=FutureWarning)
+import pandas as pd
+import pandas_ta as ta
+from binance.client import Client
+from dotenv import load_dotenv
+
 
 def init_binance_client():
     load_dotenv()
@@ -85,12 +84,7 @@ def create_dataframe(klines):
     return df
 
 def add_trend_indicators(df):
-    """
-    바이낸스 비트코인 선물(BTCUSDT), 5분봉, 박스권(횡보) 매매전략을 고려하여
-    빠른 신호 탐지를 위해 일부 지표 파라미터를 단축한 예시 함수.
-    """
-
-    # (1) 컬럼명 변경(pandas_ta 표준)
+    # (1) 컬럼명 변경 (pandas_ta 사용 표준에 맞춤)
     df = df.rename(columns={
         "open": "Open",
         "high": "High",
@@ -99,83 +93,195 @@ def add_trend_indicators(df):
         "volume": "Volume"
     })
 
-    # 1) RSI (length=9)
-    rsi_df = ta.rsi(df["Close"], length=9)
-    df = pd.concat([df, rsi_df], axis=1)
+    # ADX - (15분봉에서 좀 더 표준적인 길이)
+    df.ta.adx(
+        high="High", low="Low", close="Close",
+        length=14,            # 15분봉에서 추세 판단에 널리 쓰이는 값
+        append=True
+    )
 
-    # 2) Stochastic (k=9, d=3)
-    stoch_df = ta.stoch(high=df["High"], low=df["Low"], close=df["Close"], k=9, d=3)
-    df = pd.concat([df, stoch_df], axis=1)
+    # Choppiness Index
+    df.ta.chop(
+        high="High", low="Low", close="Close",
+        length=14,           # 일반적으로 쓰이는 길이 (횡보/추세 구분)
+        append=True
+    )
 
-    # 3) Stochastic RSI (length=9, rsi_length=9, k=3, d=3)
-    stochrsi_df = ta.stochrsi(df["Close"], length=9, rsi_length=9, k=3, d=3)
-    df = pd.concat([df, stochrsi_df], axis=1)
+    # Bollinger Bands
+    df.ta.bbands(
+        close="Close",
+        length=20,           # 표준적 설정
+        std=2.0,             # 추세/변동성 파악에 유효
+        append=True
+    )
 
-    # 4) Williams %R (length=9)
-    willr_df = ta.willr(high=df["High"], low=df["Low"], close=df["Close"], length=9)
-    df = pd.concat([df, willr_df], axis=1)
+    # MACD - (15분봉에서 널리 쓰이는 12,26,9)
+    df.ta.macd(
+        close="Close",
+        fast=12, slow=26,    # 보편적인 MACD 파라미터
+        signal=9,
+        append=True
+    )
 
-    # 5) CCI (length=14)
-    cci_df = ta.cci(high=df["High"], low=df["Low"], close=df["Close"], length=14)
-    df = pd.concat([df, cci_df], axis=1)
+    # # Ichimoku - (전통적 9,26,52 사용)
+    # df.ta.ichimoku(
+    #     high="High", low="Low", close="Close",
+    #     tenkan=9, kijun=26, senkou=52,  # 일봉 표준이지만 15분봉에서도 자주 활용
+    #     append=True
+    # )
 
-    # 6) Ultimate Oscillator (UO) (fast=4, medium=8, slow=16)
-    uo_df = ta.uo(high=df["High"], low=df["Low"], close=df["Close"],
-                  fast=4, medium=8, slow=16)
-    df = pd.concat([df, uo_df], axis=1)
+    # Keltner Channel
+    df.ta.kc(
+        high="High", low="Low", close="Close",
+        length=20,           # BB와 유사 기준
+        scalar=1.5,
+        append=True
+    )
 
-    # 7) Bollinger Bands (length=14, std=2.0)
-    bbands_df = ta.bbands(close=df["Close"], length=14, std=2.0)
-    df = pd.concat([df, bbands_df], axis=1)
+    # TTM Trend
+    df.ta.ttm_trend(
+        high="High", low="Low", close="Close",
+        length=9,            # 15분봉에서 비교적 빠른 추세 포착
+        append=True
+    )
 
-    # 8) Keltner Channel (length=14, scalar=1.5)
-    kc_df = ta.kc(high=df["High"], low=df["Low"], close=df["Close"],
-                  length=14, scalar=1.5)
-    df = pd.concat([df, kc_df], axis=1)
+    # Squeeze Pro
+    df.ta.squeeze_pro(
+        bb_length=20,
+        bb_std=2.0,
+        kc_length=20,
+        kc_mult=1.5,
+        append=True
+    )
 
-    # 9) Z Score (length=14)
-    zscore_df = ta.zscore(df["Close"], length=14)
-    df = pd.concat([df, zscore_df], axis=1)
+    # Squeeze
+    df.ta.squeeze(
+        bb_length=20,
+        bb_std=2.0,
+        kc_length=20,
+        kc_mult=1.5,
+        append=True
+    )
 
-    # 10) ATR (length=10)
-    atr_df = ta.atr(high=df["High"], low=df["Low"], close=df["Close"], length=10)
-    df = pd.concat([df, atr_df], axis=1)
+    # Aroon
+    df.ta.aroon(
+        high="High", low="Low",
+        length=14,           # 추세 판단에 보편적
+        append=True
+    )
 
-    # 11) Chop (Choppiness Index) (length=10)
-    chop_df = ta.chop(high=df["High"], low=df["Low"], close=df["Close"], length=10)
-    df = pd.concat([df, chop_df], axis=1)
+    # Supertrend
+    df.ta.supertrend(
+        high="High", low="Low", close="Close",
+        length=12,           # 15분봉에 맞춰 다소 늘린 길이
+        multiplier=3.0,
+        append=True
+    )
 
-    # 12) MFI (length=10)
-    mfi_df = ta.mfi(high=df["High"], low=df["Low"], close=df["Close"],
-                    volume=df["Volume"], length=10)
-    df = pd.concat([df, mfi_df], axis=1)
+    # Parabolic SAR
+    df.ta.psar(
+        high="High", low="Low", close="Close",
+        step=0.02,
+        max_step=0.2,
+        append=True
+    )
 
-    # 13) OBV (On-Balance Volume)
-    obv_df = ta.obv(close=df["Close"], volume=df["Volume"])
-    df = pd.concat([df, obv_df], axis=1)
+    # Schaff Trend Cycle
+    df.ta.stc(
+        close="Close",
+        fast=14,             # MACD 기반을 약간 늘림
+        slow=28,
+        factor=0.5,
+        append=True
+    )
 
-    # 14) CMF (Chaikin Money Flow) (length=14)
-    cmf_df = ta.cmf(high=df["High"], low=df["Low"], close=df["Close"],
-                    volume=df["Volume"], length=14)
-    df = pd.concat([df, cmf_df], axis=1)
+    # KST Oscillator
+    df.ta.kst(
+        close="Close",
+        roc1=9, roc2=13, roc3=15, roc4=20,   # 중단기 위주
+        smroc1=6, smroc2=6, smroc3=6, smroc4=6,  # 다소 빠른 반응
+        signal=9,
+        append=True
+    )
 
-    # 15) AD (Accumulation/Distribution)
-    ad_df = ta.ad(high=df["High"], low=df["Low"], close=df["Close"], volume=df["Volume"])
-    df = pd.concat([df, ad_df], axis=1)
+    # VHF (Vertical Horizontal Filter)
+    df.ta.vhf(
+        close="Close",
+        length=14,
+        append=True
+    )
 
-    # 16) stdev (표준편차) (length=14)
-    stdev_df = ta.stdev(df["Close"], length=14)
-    df = pd.concat([df, stdev_df], axis=1)
+    # Efficiency Ratio
+    df.ta.er(
+        close="Close",
+        length=10,
+        append=True
+    )
 
-    # 17) variance (분산) (length=14)
-    variance_df = ta.variance(df["Close"], length=14)
-    df = pd.concat([df, variance_df], axis=1)
+    # Inertia (ER 기반 추세 지표)
+    df.ta.inertia(
+        close="Close",
+        r=14,
+        append=True
+    )
 
-    # 18) mad (Mean Absolute Deviation) (length=14)
-    mad_df = ta.mad(df["Close"], length=14)
-    df = pd.concat([df, mad_df], axis=1)
+    # Chande Kroll Stop
+    df.ta.cksp(
+        high="High", low="Low", close="Close",
+        len1=10, len2=20,
+        append=True
+    )
 
-    # (마지막) 컬럼명 원복
+    # Vortex
+    df.ta.vortex(
+        high="High", low="Low", close="Close",
+        length=14,
+        append=True
+    )
+
+    # Archer Moving Averages Trends (AMAT)
+    df.ta.amat(
+        close="Close",
+        fast=10, slow=20,   # 15분봉에 맞춰 조정
+        append=True
+    )
+
+    # Trend Signals
+    df.ta.tsignals(
+        close="Close",
+        length=14,
+        append=True
+    )
+
+    # Kaufman’s Adaptive Moving Average (KAMA)
+    df.ta.kama(
+        close="Close",
+        length=10, fast=2, slow=30,
+        append=True
+    )
+
+    # Donchian Channel
+    df.ta.donchian(
+        high="High", low="Low", close="Close",
+        lower_length=20, upper_length=20,
+        append=True
+    )
+
+    # Slope
+    df.ta.slope(
+        close="Close",
+        length=10,           # 빠른 추세 변화 파악
+        append=True
+    )
+
+    # ATR (Average True Range)
+    df.ta.atr(
+        high="High", low="Low", close="Close",
+        length=14,           # 변동성 측정 표준
+        append=True
+    )
+
+    # (5) 컬럼명 원복
     df = df.rename(columns={
         "Open": "open",
         "High": "high",
@@ -212,7 +318,8 @@ def save_csv_to_txt(csv_file_path, txt_file_path):
         "2. 반드시 모든 보조지표를 검토하라.\n"
         "3. 현재 추세장인지 횡보장인지 분석하라.\n"
         "4. 현재 추세를 점수로 제시하라. 점수: -100점 ~ 100점 (-100점에 가까울수록 내림추세, 100점에 가까울수록 오름추세, 0점에 가까울수록 횡보)\n"
-        "5. 포지션(Long, Short), 목표가, 손절가를 제시하라\n"
+        "5. 점수를 바탕으로 추세추종전략 또는 박스권매매전략을 추천하라.\n"
+        "6. 진입가, 목표가, 손절가를 제시하라\n"
     )
 
     # 2) CSV 내용 읽기
@@ -233,8 +340,10 @@ def save_csv_to_txt(csv_file_path, txt_file_path):
 def main():
     client = init_binance_client()
 
+    # 15m, 1h, 4h: 100, 50, 30
+    # 5m, 15m, 1h: 200, 100, 50
     symbol = "BTCUSDT"
-    interval = Client.KLINE_INTERVAL_5MINUTE
+    interval = Client.KLINE_INTERVAL_15MINUTE
 
     # 폴더 정리
     folder_name = "report"
@@ -257,23 +366,23 @@ def main():
     df_main = add_trend_indicators(df_main)
 
     # 전체 데이터 CSV 저장
-    csv_filename_all = os.path.join(folder_name, f"{timestamp}_data_all.csv")
+    csv_filename_all = os.path.join(folder_name, f"{timestamp}_{symbol}_{interval}_final_all.csv")
     save_to_csv(df_main, csv_filename_all)
 
     # (1) 실제 opentime 있는 데이터 중 최근 10개
     df_with_opentime = df_main[df_main["opentime"].notna()]
-    df_last_10 = df_with_opentime.tail(60)
+    df_last_10 = df_with_opentime.tail(100)
 
-    # (2) opentime이 NaN인 미래행 (일목균형표 선행 스팬)
+    # # (2) opentime이 NaN인 미래행 (일목균형표 선행 스팬)
     df_without_opentime = df_main[df_main["opentime"].isna()]
 
     # (3) 합쳐서 저장
     df_final = pd.concat([df_last_10, df_without_opentime], axis=0)
-    csv_filename_final = os.path.join(folder_name, f"{timestamp}_data_recent10.csv")
+    csv_filename_final = os.path.join(folder_name, f"{timestamp}_{symbol}_{interval}_final_recent10_future.csv")
     save_to_csv(df_final, csv_filename_final)
 
     # 바로 TXT 파일로도 저장 (csv_filename_final => txt_filename_final)
-    txt_filename_final = os.path.join(folder_name, f"{timestamp}_data_recent10.txt")
+    txt_filename_final = os.path.join(folder_name, f"{timestamp}_{symbol}_{interval}_final_recent10_future.txt")
     save_csv_to_txt(csv_filename_final, txt_filename_final)
 
 
