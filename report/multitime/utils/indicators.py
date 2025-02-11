@@ -2,12 +2,12 @@
 
 import pandas_ta as ta
 
-def add_trend_indicators(df, tf_params):
+def add_indicators(df, tf_params):
     """
-    df : 원본 DataFrame
-    tf_params : 이 시간 프레임에 맞게 설정된 보조지표 파라미터 dict
+    df: 원본 DataFrame (열 이름: open, high, low, close, volume)
+    tf_params: 보조지표에 사용할 파라미터(딕셔너리)
     """
-    # (1) 컬럼명 변경 (pandas_ta 사용 표준에 맞춤)
+    # (1) 컬럼명 변경(pandas_ta 표준)
     df = df.rename(columns={
         "open": "Open",
         "high": "High",
@@ -16,12 +16,12 @@ def add_trend_indicators(df, tf_params):
         "volume": "Volume"
     })
 
-    # adx
+    # ADX
     df.ta.adx(high="High", low="Low", close="Close",
               length=tf_params.get('adx_length', 14),
               append=True)
 
-    # Choppiness Index
+    # CHOP
     df.ta.chop(high="High", low="Low", close="Close",
                length=tf_params.get('chop_length', 14),
                append=True)
@@ -57,14 +57,13 @@ def add_trend_indicators(df, tf_params):
                     length=tf_params.get('ttm_length', 15),
                     append=True)
 
-    # Squeeze Pro
+    # Squeeze Pro & Squeeze
     df.ta.squeeze_pro(bb_length=tf_params.get('bb_length', 20),
                       bb_std=tf_params.get('bb_std', 2.0),
                       kc_length=tf_params.get('kc_length', 20),
                       kc_mult=tf_params.get('kc_scalar', 1.5),
                       append=True)
 
-    # Squeeze
     df.ta.squeeze(bb_length=tf_params.get('bb_length', 20),
                   bb_std=tf_params.get('bb_std', 2.0),
                   kc_length=tf_params.get('kc_length', 20),
@@ -134,7 +133,7 @@ def add_trend_indicators(df, tf_params):
                  length=tf_params.get('vortex_length', 14),
                  append=True)
 
-    # Archer Moving Averages Trends (AMAT)
+    # AMAT
     df.ta.amat(close="Close",
                fast=tf_params.get('amat_fast', 10),
                slow=tf_params.get('amat_slow', 20),
@@ -169,58 +168,38 @@ def add_trend_indicators(df, tf_params):
               append=True)
 
     # RSI
-    df.ta.rsi(
-        close="Close",
-        length=tf_params.get('rsi_length', 14),
-        append=True
-    )
+    df.ta.rsi(close="Close",
+              length=tf_params.get('rsi_length', 14),
+              append=True)
 
     # Stochastic
-    df.ta.stoch(
-        high="High",
-        low="Low",
-        close="Close",
-        k=tf_params.get('stoch_k', 14),
-        d=tf_params.get('stoch_d', 3),
-        smooth=tf_params.get('stoch_smooth', 3),
-        append=True
-    )
+    df.ta.stoch(high="High", low="Low", close="Close",
+                k=tf_params.get('stoch_k', 14),
+                d=tf_params.get('stoch_d', 3),
+                smooth=tf_params.get('stoch_smooth', 3),
+                append=True)
 
     # OBV
-    df.ta.obv(
-        close="Close",
-        volume="Volume",
-        append=True
-    )
+    df.ta.obv(close="Close", volume="Volume", append=True)
 
     # CCI
-    df.ta.cci(
-        high="High",
-        low="Low",
-        close="Close",
-        length=tf_params.get('cci_length', 20),
-        c=tf_params.get('cci_constant', 0.015),
-        append=True
-    )
+    df.ta.cci(high="High", low="Low", close="Close",
+              length=tf_params.get('cci_length', 20),
+              c=tf_params.get('cci_constant', 0.015),
+              append=True)
 
-    # PVO (Percentage Volume Oscillator)
-    df.ta.pvo(
-        volume="Volume",
-        fast=tf_params.get('pvo_fast', 12),
-        slow=tf_params.get('pvo_slow', 26),
-        signal=tf_params.get('pvo_signal', 9),
-        append=True
-    )
+    # PVO
+    df.ta.pvo(volume="Volume",
+              fast=tf_params.get('pvo_fast', 12),
+              slow=tf_params.get('pvo_slow', 26),
+              signal=tf_params.get('pvo_signal', 9),
+              append=True)
 
-    # MFI (Money Flow Index)
-    df.ta.mfi(
-        high="High",
-        low="Low",
-        close="Close",
-        volume="Volume",
-        length=tf_params.get('mfi_length', 14),
-        append=True
-    )
+    # MFI
+    df.ta.mfi(high="High", low="Low", close="Close",
+              volume="Volume",
+              length=tf_params.get('mfi_length', 14),
+              append=True)
 
     # (마무리) 컬럼명 원복
     df = df.rename(columns={

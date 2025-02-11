@@ -2,14 +2,9 @@
 
 import datetime
 import os
-import warnings
 
-# FutureWarning 무시
-warnings.filterwarnings("ignore", category=FutureWarning)
-
-from multitime.utils.indicators import add_trend_indicators
-# (1) 모듈 임포트
-from multitime.utils.utils import (
+from report.multitime.utils.indicators import add_trend_indicators
+from report.multitime.utils.utils import (
     init_binance_client,
     cleanup_report_folder,
     get_instructions_text,
@@ -17,12 +12,15 @@ from multitime.utils.utils import (
     create_dataframe,
     save_to_csv
 )
-from multitime.utils.config import (
+from report.multitime.utils.config import (
     timeframe_set_1,
     timeframe_set_2,
     params_set_1,
     params_set_2
 )
+import warnings
+
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 def process_timeframe_set(client, symbol, timeframe_list, param_dict, total_data_count, folder_name, timestamp):
     """

@@ -62,6 +62,7 @@ def create_dataframe(klines):
     # 열 순서 재배치
     new_columns_order = ["opentime"] + [c for c in columns if c != "ignore"]
     df = df[new_columns_order]
+
     return df
 
 def save_to_csv(df, filename):
@@ -104,7 +105,6 @@ def get_instructions_text():
         "2. 반드시 모든 보조지표를 검토하라.\n"
         "3. 현재 추세장인지 횡보장인지 분석하라.\n"
         "4. 현재 추세를 점수로 제시하라. 점수: -100점 ~ 100점\n"
-        "   (-100점에 가까울수록 내림추세, 100점에 가까울수록 오름추세, 0점에 가까울수록 횡보)\n"
-        "5. 점수를 바탕으로 추세추종전략 또는 박스권매매전략을 추천하라.\n"
-        "6. 포지션(LONG, SHORT), 진입가, 목표가, 손절가를 제시하라\n"
+        "(-100점에 가까울수록 내림추세, 100점에 가까울수록 오름추세, 0점에 가까울수록 횡보)\n"
+        "5. 포지션(LONG, SHORT), 진입가, 목표가, 손절가를 제시하라\n"
     )
