@@ -25,11 +25,11 @@ def main():
 
     # 2) 사용자가 원하는 타임프레임들 (큰 시간프레임 -> 작은 시간프레임)
     # "1d", "4h", "1h", "15m", "5m", "1m",
-    selected_timeframes = ["1d", "4h", "1h", "15m"]
+    selected_timeframes = ["15m"]
 
     # 3) 각 타임프레임 당 가져올 OHLCV 개수 / 최근 몇 개를 텍스트에 저장할지
     total_data_count = 1500
-    recent_count = 12
+    recent_count = 500
 
     # 4) 보고서 폴더 초기화
     folder_name = "report_multiple"
@@ -57,9 +57,9 @@ def main():
         )
         df_main = create_dataframe(klines)
 
-        # 7-2) 보조지표 추가
-        tf_params = optimal_timeframe_params.get(tf, optimal_timeframe_params["5m"])
-        df_main = add_indicators(df_main, tf_params)
+        # # 7-2) 보조지표 추가
+        # tf_params = optimal_timeframe_params.get(tf, optimal_timeframe_params["5m"])
+        # df_main = add_indicators(df_main, tf_params)
 
         # 7-3) 전체 CSV 저장
         csv_filename = os.path.join(folder_name, f"{timestamp}_{symbol}_{tf}_all.csv")

@@ -314,12 +314,6 @@ def main():
     load_dotenv()
     api_key = os.getenv("BINANCE_ACCESS_KEY", "")
     api_secret = os.getenv("BINANCE_SECRET_KEY", "")
-
-    # 상위 폴더 (test_result_cr)는 한 번만 정리
-    base_out_dir = "test_result_cr"
-    prep_folder(base_out_dir)
-
-    # 바이낸스 데이터 한 번만 가져오기
     symbol = "BTCUSDT"
     interval = Client.KLINE_INTERVAL_5MINUTE
     df = fetch_data(symbol, interval, api_key, api_secret, limit=1500)
