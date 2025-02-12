@@ -1,4 +1,4 @@
-# get_futures_report.py
+get_futures_report.py
 
 import os
 import csv

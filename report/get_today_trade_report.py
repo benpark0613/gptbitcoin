@@ -1,9 +1,7 @@
-# get_futures_report.py
-
 import os
 import csv
 import logging
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta
 import pandas as pd
 import pandas_ta as ta  # pandas-ta 추가
 from dotenv import load_dotenv
@@ -17,9 +15,13 @@ from module.mbinance.closed_positions import (
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+
 def prepare_directories(report_path):
+    """
+    보고서 폴더 초기화 및 생성
+    """
     try:
-        clear_folder(report_path)
+        clear_folder(report_path)  # 기존 파일 삭제
         if not os.path.exists(report_path):
             os.makedirs(report_path)
         logging.info("Report directory prepared: %s", report_path)
@@ -30,7 +32,7 @@ def prepare_directories(report_path):
 
 def save_to_csv(file_path, data, fieldnames):
     """
-    CSV 구분자 ',' 기본 사용
+    CSV 파일로 저장
     """
     try:
         with open(file_path, 'w', newline='', encoding='utf-8') as f:
@@ -46,7 +48,11 @@ def save_to_csv(file_path, data, fieldnames):
         logging.error("Error saving CSV %s: %s", file_path, e)
         raise
 
+
 def load_env_and_create_client():
+    """
+    ENV 로드 후 바이낸스 선물 클라이언트 생성
+    """
     load_dotenv()
     access = os.getenv("BINANCE_ACCESS_KEY")
     secret = os.getenv("BINANCE_SECRET_KEY")
@@ -57,13 +63,16 @@ def load_env_and_create_client():
 
 
 def get_nonzero_futures_balance(client):
+    """
+    잔고 조회 (0이 아닌 항목만 필터링)
+    """
     try:
         futures_balance = client.futures_account_balance()
         # 0이 아닌 balance만 필터
         result = [item for item in futures_balance if float(item["balance"]) != 0.0]
 
         for item in result:
-            # updateTime 처리
+            # updateTime 처리 (UTC+9 변환)
             if "updateTime" in item:
                 utc_time = datetime.utcfromtimestamp(item["updateTime"] / 1000.0)
                 seoul_time = utc_time + timedelta(hours=9)
@@ -91,6 +100,7 @@ def get_nonzero_futures_balance(client):
         logging.error("Error retrieving futures balance: %s", e)
         raise
 
+
 def main():
     try:
         client = load_env_and_create_client()
@@ -100,13 +110,14 @@ def main():
 
         # 1) 선물 잔고 조회
         futures_balance = get_nonzero_futures_balance(client)
+        # 파일로 저장을 원한다면 예: save_to_csv(...) 등 활용 가능
 
-        # 4) closed_position.csv 생성 (오늘 청산 포지션)
+        # 2) 오늘 청산된 포지션 CSV 생성
         closed_position_csv_path = os.path.join(report_folder, "closed_position.csv")
         today_positions = save_closed_position_csv(client, symbol, closed_position_csv_path)
         logging.info(f"closed_position.csv created: {closed_position_csv_path}, count={len(today_positions)}")
 
-        # 5) today_trade_stats.csv 생성 (당일 승률/손익비/프로핏 팩터 등)
+        # 3) 오늘 거래 통계 생성 (승률, 손익비, 프로핏 팩터 등 + 확장 지표)
         today_trade_stats_csv_path = os.path.join(report_folder, "today_trade_stats.csv")
         save_today_trade_stats_csv(today_positions, today_trade_stats_csv_path)
         logging.info(f"today_trade_stats.csv created: {today_trade_stats_csv_path}")
