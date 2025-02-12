@@ -26,11 +26,11 @@ def main():
     # 2) 사용자가 원하는 타임프레임들 (큰 시간프레임 -> 작은 시간프레임)
     # "4h", "1h", "15m", "5m", "1m"
     # selected_timeframes = ["4h", "1h", "15m"]
-    selected_timeframes = ["5m"]
+    selected_timeframes = ["15m"]
 
     # 3) 각 타임프레임 당 가져올 OHLCV 개수 / 최근 몇 개를 텍스트에 저장할지
     total_data_count = 1500
-    recent_count = 6 # 예: 5 * 12 = 60
+    recent_count = 20 # 예: 5 * 12 = 60
 
     # 4) 보고서 폴더 초기화
     folder_name = "report_multiple"
