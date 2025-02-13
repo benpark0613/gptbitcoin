@@ -3,24 +3,39 @@
 import pandas as pd
 import pandas_ta as ta
 
+"""
+연구 논문(“Are simple technical trading rules profitable in Bitcoin markets?”)에서 다룬
+주요 지표(또는 룰)들은 다음과 같습니다.
+
+1) Moving Averages (MA)
+2) Filter Rules
+3) Support & Resistance (S&R)
+4) Channel Breakouts (CB)
+5) On-Balance Volume (OBV)
+6) Relative Strength Indicator (RSI)
+
+아래 코드는 논문에 없는 Bollinger Bands 등은 제거하고,
+논문에서 다룬 MA, RSI, OBV에 더해 S&R, Filter, CB에 필요한
+기본적인 rolling max/min 등을 계산해주는 함수를 간단히 추가한 예시입니다.
+
+※ 실제 매매 시그널 생성(진입/청산)은 signal_generation.py 내에서
+  각 룰별로 조건을 종합해 처리합니다.
+"""
 
 def add_ma(
     df: pd.DataFrame,
     short_period: int,
     long_period: int,
     price_col: str = 'close',
-    prefix: str = 'MA',
-    x: float = 0.0
+    prefix: str = 'MA'
 ) -> pd.DataFrame:
     """
-    논문 부록의 MA 파라미터에 맞춰, 단기/장기 이동평균(SMA)을 pandas_ta로 계산.
-    - short_period < long_period 권장
-    - x != 0 이면 퍼센트 밴드를 적용한 '단기 SMA * (1 + x)' 같은 계산을 지표로 활용할 수도 있으나,
-      여기서는 단순히 SMA 열만 생성. (퍼센트 밴드는 매매 시그널 단계에서 참고 가능)
+    (1) Moving Average
+    - 논문 부록에서 언급된 MA 전략용.
+    - 단순 이동평균(SMA) 2개(short/long)를 계산해 df에 열을 추가합니다.
+      short_period < long_period 권장.
     """
-    # 단기 SMA
     df[f'{prefix}_{short_period}'] = ta.sma(df[price_col], length=short_period)
-    # 장기 SMA
     df[f'{prefix}_{long_period}'] = ta.sma(df[price_col], length=long_period)
     return df
 
@@ -32,7 +47,9 @@ def add_rsi(
     col_name: str = 'RSI'
 ) -> pd.DataFrame:
     """
-    RSI를 계산해 df[col_name] 열로 추가. (논문에서는 h, v 등 매매 관련 파라미터를 추가로 사용)
+    (2) Relative Strength Indicator (RSI)
+    - 논문에서 h(lookback), v(50±v) 등 다양한 파라미터로
+      RSI를 활용하는데, 여기서는 기본 RSI 열만 생성.
     """
     df[col_name] = ta.rsi(df[price_col], length=period)
     return df
@@ -47,8 +64,10 @@ def add_obv(
     ma_prefix: str = 'OBV_MA'
 ) -> pd.DataFrame:
     """
-    On-Balance Volume(OBV)을 계산해 df[col_name] 열에 추가.
-    - ma_period가 주어지면, OBV에 대한 이동평균도 추가 (OBV 교차전략 등 활용 가능)
+    (3) On-Balance Volume (OBV)
+    - 가격 상승이면 거래량(Volume)을 누적으로 더하고, 하락이면 빼며
+      추세와 거래량의 상관관계를 파악하는 지표.
+    - ma_period가 있으면 OBV의 이동평균을 추가(논문에서 p,q 등).
     """
     df[col_name] = ta.obv(df[price_col], df[volume_col])
     if ma_period is not None and ma_period > 1:
@@ -56,110 +75,52 @@ def add_obv(
     return df
 
 
-def add_bbands(
+def add_sr(
     df: pd.DataFrame,
-    period: int = 20,
-    std: float = 2.0,
-    price_col: str = 'close',
-    prefix: str = 'BB'
+    window: int = 20,
+    prefix: str = 'SR'
 ) -> pd.DataFrame:
     """
-    볼린저 밴드(Bollinger Bands)를 pandas_ta로 계산.
-    - period, std 파라미터 (논문 기본 20,2.0)
+    (4) Support & Resistance (S&R)을 위한 기본 데이터:
+    - 최근 window 기간의 최고가/최저가(rolling max/min)를 저장.
+    - 실제 매매 신호는 signal_generation.py 등에서
+      close > max*(1+x) 시 매수 등으로 처리.
     """
-    bb_df = ta.bbands(df[price_col], length=period, std=std)
-    if bb_df is None or bb_df.empty:
-        print("WARNING: Bollinger bands returned None or empty.")
-        return df
-
-    # pandas_ta 기본: 'BBL_20_2.0', 'BBM_20_2.0', 'BBU_20_2.0'
-    low_col = f'BBL_{period}_{std}.0'
-    mid_col = f'BBM_{period}_{std}.0'
-    up_col  = f'BBU_{period}_{std}.0'
-
-    if low_col not in bb_df.columns:
-        # 간혹 float 문자열 변환 차이가 있을 수 있음
-        # ex: 'BBL_20_2.0' vs 'BBL_20_2'
-        # 필요 시 bb_df.columns를 확인해 매칭 로직 구현
-        found_low_col = [c for c in bb_df.columns if c.startswith('BBL')]
-        found_mid_col = [c for c in bb_df.columns if c.startswith('BBM')]
-        found_up_col  = [c for c in bb_df.columns if c.startswith('BBU')]
-        if found_low_col:
-            low_col = found_low_col[0]
-        if found_mid_col:
-            mid_col = found_mid_col[0]
-        if found_up_col:
-            up_col = found_up_col[0]
-
-    df[f'{prefix}_low'] = bb_df[low_col]
-    df[f'{prefix}_mid'] = bb_df[mid_col]
-    df[f'{prefix}_up']  = bb_df[up_col]
+    df[f'{prefix}_high'] = df['high'].rolling(window).max()
+    df[f'{prefix}_low'] = df['low'].rolling(window).min()
     return df
 
 
-def add_all_indicators(
+def add_filter(
     df: pd.DataFrame,
-    ma_short: int = 9,
-    ma_long: int = 20,
-    ma_x: float = 0.0,          # 퍼센트 밴드용
-    rsi_period: int = 14,
-    obv_ma_period: int = None, # OBV 이동평균
-    bb_period: int = 20,
-    bb_std: float = 2.0
+    window: int = 20,
+    prefix: str = 'FL'
 ) -> pd.DataFrame:
     """
-    연구논문에서 사용하는 대표 지표(MA, RSI, OBV, BollBand)를
-    한 번에 붙이는 함수. 파라미터를 지정 가능.
-    - ma_short, ma_long, ma_x: MA
-    - rsi_period: RSI
-    - obv_ma_period: OBV 이동평균
-    - bb_period, bb_std: 볼린저밴드
+    (5) Filter Rules
+    - 논문에서는 '가장 최근 low 대비 x% 상승' 등으로 진입,
+      '가장 최근 high 대비 y% 하락'으로 청산 등 다양한 변형을 다룸.
+    - 여기서는 필수 기본값인 최근 window 기간의 rolling min/max만 추가해둠.
+    - 구체적 매수/매도 로직은 signal_generation.py 등에서 구현.
     """
-    # (1) MA
-    df = add_ma(df, short_period=ma_short, long_period=ma_long,
-                x=ma_x, price_col='close', prefix='MA')
-
-    # (2) RSI
-    df = add_rsi(df, period=rsi_period, price_col='close', col_name=f'RSI_{rsi_period}')
-
-    # (3) OBV (+optional 이동평균)
-    df = add_obv(df, price_col='close', volume_col='volume',
-                 col_name='OBV', ma_period=obv_ma_period)
-
-    # (4) Bollinger Bands
-    df = add_bbands(df, period=bb_period, std=bb_std, price_col='close', prefix='BB')
-
+    df[f'{prefix}_min'] = df['low'].rolling(window).min()
+    df[f'{prefix}_max'] = df['high'].rolling(window).max()
     return df
 
 
-if __name__ == "__main__":
-    # 예시: 임의의 작은 데이터로 지표를 계산해 본다.
-    from io import StringIO
-    data_str = """open_time_dt,open,high,low,close,volume
-2024-01-01,42314.00,44266.00,42207.90,44230.20,206424.144
-2024-01-02,44230.30,45950.00,44200.90,44979.80,459798.523
-2024-01-03,44979.70,45582.30,40333.00,42849.50,595855.225
-2024-01-04,42849.50,44840.80,42625.00,44143.80,333923.098
-2024-01-05,44143.80,44500.00,42300.00,44145.40,374967.791
-2024-01-06,44145.30,44214.60,43391.30,43956.70,138542.797
-2024-01-07,43956.60,44486.90,43557.50,43916.90,180710.714
-"""
-    df_test = pd.read_csv(StringIO(data_str), parse_dates=['open_time_dt'])
-    df_test.set_index('open_time_dt', inplace=True)
-
-    # 지표 계산 예: MA(9,20), RSI(14), OBV(이동평균 없음), BB(20,2.0)
-    df_test = add_all_indicators(
-        df_test,
-        ma_short=9,
-        ma_long=20,
-        ma_x=0.05,        # 예) 퍼센트 밴드, 여기서는 단순히 지표명만 기록
-        rsi_period=14,
-        obv_ma_period=None,
-        bb_period=20,
-        bb_std=2.0
-    )
-
-    print("=== Data with Indicators ===")
-    print(df_test)
-    print("\n=== Summary ===")
-    print(df_test.describe(include='all'))
+def add_cb(
+    df: pd.DataFrame,
+    window: int = 20,
+    prefix: str = 'CB'
+) -> pd.DataFrame:
+    """
+    (6) Channel Breakout (CB)을 위한 기본 데이터:
+    - 최근 window 기간의 high/low를 이용해 채널 폭 계산.
+    - 논문에서 c% 미만의 좁은 채널 형성 + high 돌파 시 매수 등.
+    - 여기서는 rolling high/low만 추가.
+    """
+    df[f'{prefix}_high'] = df['high'].rolling(window).max()
+    df[f'{prefix}_low'] = df['low'].rolling(window).min()
+    # 추가로 채널 폭 계산 컬럼
+    df[f'{prefix}_width'] = (df[f'{prefix}_high'] - df[f'{prefix}_low']).abs()
+    return df
