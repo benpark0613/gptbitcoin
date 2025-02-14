@@ -124,3 +124,7 @@ def add_cb(
     # 추가로 채널 폭 계산 컬럼
     df[f'{prefix}_width'] = (df[f'{prefix}_high'] - df[f'{prefix}_low']).abs()
     return df
+
+
+def add_all_indicators():
+    return None
