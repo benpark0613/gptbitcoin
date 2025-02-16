@@ -1,0 +1,9 @@
+{
+  "time_delay_list": [0,1,2,3,4,5],
+  "holding_period_list": [1,6,12,24,"infinity"],
+
+  "shorting_allowed_list": [true],
+  "leverage_list": [3.0],
+  "margin_interest_rate": 0.0000125,
+  "transaction_fee_rate": 0.0004
+}

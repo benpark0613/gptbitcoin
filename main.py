@@ -1,239 +1,417 @@
 # main.py
 
 import os
-import sys
-import time
-import json
-import shutil
 import pandas as pd
-from datetime import datetime
 
-from module.data_manager.tf_data_updater import update_csv
-from module.backtester.backtester_bt import run_backtest_bt
-from module.strategies.buy_and_hold import BuyAndHoldStrategy
+# 필요한 모듈 임포트
+from utils.helper import create_binance_client
+from data.data_manager import DataManager
+from statistics.multiple_testing import run_multiple_tests_parallel
+from strategies.strategy import Strategy
+from backtesting.backtester import Backtester
 
-
-##############################################################################
-# 1) 유틸 함수
-##############################################################################
-def clear_results_folder(path: str = "results"):
-    if os.path.exists(path):
-        shutil.rmtree(path)
-    os.makedirs(path, exist_ok=True)
-
-def date_to_ms(dstr: str) -> int:
-    dt = datetime.strptime(dstr, "%Y-%m-%d")
-    return int(dt.timestamp() * 1000)
-
-def load_json(path: str):
-    with open(path, 'r', encoding='utf-8') as f:
+def load_indicator_params(path="config/parameters.json"):
+    """
+    인디케이터 파라미터 JSON 파일 로딩
+    예) {
+       "MA": {
+          "short_periods": [5,10,20],
+          "long_periods":  [50,100,200]
+       },
+       ...
+    }
+    """
+    import json
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-##############################################################################
-# 2) CSV -> DataFrame 슬라이싱
-##############################################################################
-def fetch_and_prepare_data(symbol, interval, start_ts, end_ts, csv_path):
+def load_strategy_params(path="config/strategy_config.json"):
     """
-    update_csv로 전체 히스토리 누적,
-    CSV 로드 -> Datetime 인덱스 변환 -> (start_ts~end_ts) 슬라이싱
-    """
-    df_updated = update_csv(symbol, interval, start_ts, end_ts, csv_path)
-    print(f"[INFO] CSV updated rows: {len(df_updated)}")
-
-    df_csv = pd.read_csv(csv_path)
-    if df_csv.empty:
-        print("[ERROR] CSV is empty after read_csv.")
-        return pd.DataFrame()
-
-    df_csv["datetime"] = pd.to_datetime(df_csv["open_time"], unit="ms", utc=True)
-    df_csv.set_index("datetime", inplace=True)
-    df_csv.sort_index(inplace=True)
-
-    if df_csv.empty:
-        print("[ERROR] CSV is empty after datetime conversion.")
-        return pd.DataFrame()
-
-    start_dt = pd.to_datetime(start_ts, unit='ms', utc=True)
-    end_dt   = pd.to_datetime(end_ts,   unit='ms', utc=True)
-
-    df_sliced = df_csv.loc[(df_csv.index >= start_dt) & (df_csv.index < end_dt)]
-    return df_sliced
-
-##############################################################################
-# 3) CSV 결과 저장 (성과지표)
-##############################################################################
-def save_result_to_csv(result, out_csv="results/backtest_results.csv", extra_info=None):
-    """
-    BacktestResult 객체를 CSV에 누적 저장.
-    - 백테스트 구간(data_start, data_end) 및 사용된 보조지표 파라미터(strategy_params)를 함께 기록.
-    - 모든 float 값은 소수점 둘째자리까지 반올림.
-    """
-    result_dict = result.to_dict()
-
-    # float 값 2자리 반올림
-    for key, value in result_dict.items():
-        if isinstance(value, float):
-            result_dict[key] = round(value, 2)
-
-    if extra_info:
-        for k, v in extra_info.items():
-            # 만약 v가 float이면 반올림 처리
-            if isinstance(v, float):
-                extra_info[k] = round(v, 2)
-            result_dict[k] = v
-
-    df_out = pd.DataFrame([result_dict])
-
-    preferred_order = [
-        "data_start",
-        "data_end",
-        "total_trades",
-        "sharpe",
-        "max_drawdown_pct",
-        "final_value",
-        "net_profit",
-        "won_trades",
-        "lost_trades",
-        "strike_rate",
-        "annual_return_pct",
-        "sqn",
-        "profit_factor",
-        "avg_win",
-        "avg_loss",
-        "win_streak",
-        "lose_streak",
-        "pnl_net",
-        "pnl_gross",
-        "interval",
-        "symbol",
-        "strategy_params"  # 새로 추가된 보조지표 파라미터
-    ]
-    remaining_cols = [c for c in df_out.columns if c not in preferred_order]
-    new_order = preferred_order + remaining_cols
-
-    df_out = df_out.reindex(columns=new_order)
-
-    write_header = not os.path.exists(out_csv)
-    df_out.to_csv(out_csv, mode='a', header=write_header, index=False, encoding='utf-8-sig')
-    print(f"[INFO] CSV 저장 완료: {out_csv}")
-
-##############################################################################
-# 4) 백테스트 실행 + 콘솔/CSV 기록
-##############################################################################
-def run_single_backtest(df, interval, symbol, start_ts, end_ts, strategy_cls, strategy_params, start_cash, commission):
-    if df.empty:
-        print(f"[ERROR] {interval} df empty => skip")
-        return
-
-    data_start_dt = df.index.min()
-    data_end_dt   = df.index.max()
-    data_start_str = data_start_dt.isoformat()
-    data_end_str   = data_end_dt.isoformat()
-
-    print(f"[INFO] Backtest {interval}: Rows={len(df)}, Range={data_start_str} ~ {data_end_str}")
-
-    result = run_backtest_bt(
-        df=df,
-        strategy_cls=strategy_cls,
-        strategy_params=strategy_params,
-        start_cash=start_cash,
-        commission=commission,
-        plot=False,
-        use_progress=True
-    )
-
-    print("\n===== 백테스트 결과 =====")
-    print("Interval:", interval)
-    print("Data Start:", data_start_str, " / Data End:", data_end_str)
-    print("Sharpe Ratio:", result.sharpe)
-    print("MDD (%):", result.max_drawdown_pct)
-    print("Final Value:", result.final_value)
-    print("Net Profit:", result.net_profit)
-    print("Total Trades:", result.total_trades)
-    print("PnL net:", result.pnl_net, "/ gross:", result.pnl_gross)
-
-    # extra_info에 strategy_params 추가 (JSON 문자열)
-    extra_info = {
-        "interval": interval,
-        "symbol": symbol,
-        "data_start": data_start_str,
-        "data_end": data_end_str,
-        "strategy_params": json.dumps(strategy_params, ensure_ascii=False)
+    전략 파라미터 JSON 파일 로딩
+    예) {
+       "time_delay_list": [0,1,2],
+       "holding_period_list": [6,12,24],
+       "shorting_allowed_list": [false, true]
     }
-    save_result_to_csv(
-        result,
-        out_csv="results/backtest_results.csv",
-        extra_info=extra_info
+    """
+    import json
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+# ─────────────────────────────────────────
+# "단일 지표" 전용 config 생성 함수
+# ─────────────────────────────────────────
+from itertools import product
+
+def generate_indicator_configs(ind_params):
+    """
+    논문 방식(각 지표별 독립 테스트)을 위해,
+    한 번에 한 지표만 담긴 config들을 만들도록 수정.
+
+    예) ind_params (예시):
+    {
+      "MA":{
+         "short_periods":[5,10,20],
+         "long_periods":[50,100]
+      },
+      "RSI":{
+         "lengths":[7,14,30],
+         "overbought_values":[70,80],
+         "oversold_values":[20,30]
+      },
+      ...
+    }
+    ⇒ 반환 값:
+       [{"MA":{"short_period":5,"long_period":50}}, {"MA":{"short_period":5,"long_period":100}}, ...,
+        {"RSI":{"length":7,"overbought":70,"oversold":30}}, ... ]
+       즉, 하나의 dict당 하나의 인디케이터만 포함.
+    """
+
+    configs = []
+
+    # 1) MA
+    if "MA" in ind_params:
+        ma_params = ind_params["MA"]
+        short_list = ma_params.get("short_periods", [])
+        long_list  = ma_params.get("long_periods", [])
+        for sp, lp in product(short_list, long_list):
+            c = {
+                "MA": {
+                    "short_period": sp,
+                    "long_period": lp,
+                    "price": "close"
+                }
+            }
+            configs.append(c)
+
+    # 2) RSI
+    if "RSI" in ind_params:
+        rsi_params = ind_params["RSI"]
+        lengths     = rsi_params.get("lengths", [])
+        overboughts = rsi_params.get("overbought_values", [])
+        oversolds   = rsi_params.get("oversold_values", [])
+        for l_, ob_, os_ in product(lengths, overboughts, oversolds):
+            c = {
+                "RSI": {
+                    "length": l_,
+                    "overbought": ob_,
+                    "oversold": os_
+                }
+            }
+            configs.append(c)
+
+    # 3) Filter
+    if "Filter" in ind_params:
+        f_params = ind_params["Filter"]
+        x_vals   = f_params.get("x_values", [])
+        y_vals   = f_params.get("y_values", [])
+        windows  = f_params.get("windows", [])
+        for x_, y_, w_ in product(x_vals, y_vals, windows):
+            c = {
+                "Filter": {
+                    "x": x_,
+                    "y": y_,
+                    "window": w_
+                }
+            }
+            configs.append(c)
+
+    # 4) ChannelBreakout
+    if "ChannelBreakout" in ind_params:
+        cb_params = ind_params["ChannelBreakout"]
+        cb_windows = cb_params.get("windows", [])
+        c_vals     = cb_params.get("c_values", [])
+        for w_, c_ in product(cb_windows, c_vals):
+            cdict = {
+                "ChannelBreakout": {
+                    "window": w_,
+                    "c": c_
+                }
+            }
+            configs.append(cdict)
+
+    # 5) OBV
+    if "OBV" in ind_params:
+        obv_params = ind_params["OBV"]
+        sp_list = obv_params.get("short_periods", [])
+        lp_list = obv_params.get("long_periods", [])
+        for sp_, lp_ in product(sp_list, lp_list):
+            c = {
+                "OBV": {
+                    "short_period": sp_,
+                    "long_period": lp_
+                }
+            }
+            configs.append(c)
+
+    # 6) Support_Resistance
+    if "Support_Resistance" in ind_params:
+        sr_params = ind_params["Support_Resistance"]
+        sr_windows = sr_params.get("windows", [])
+        for w_ in sr_windows:
+            c = {
+                "Support_Resistance": {
+                    "window": w_
+                }
+            }
+            configs.append(c)
+
+    return configs
+
+
+def generate_strategy_configs(strat_params):
+    """
+    전략 파라미터: time_delay, holding_period, shorting_allowed 등
+    예:
+      {
+        "time_delay_list": [0,1,2],
+        "holding_period_list": [6,12],
+        "shorting_allowed_list": [false]
+      }
+    => 모든 조합을 만들고 반환
+    """
+    from itertools import product
+    time_delays = strat_params.get("time_delay_list", [0])
+    holding_periods = strat_params.get("holding_period_list", [6])
+    shorting_list = strat_params.get("shorting_allowed_list", [False])
+
+    combos = []
+    for td, hp, sa in product(time_delays, holding_periods, shorting_list):
+        combos.append({
+            "time_delay": td,
+            "holding_period": hp,
+            "shorting_allowed": sa
+        })
+    return combos
+
+
+def combine_configs(ind_cfg, strat_cfg):
+    """
+    단일 지표 config + 전략 파라미터 config -> 하나의 dict로 합침
+    """
+    merged = {}
+    for k, v in ind_cfg.items():
+        merged[k] = v
+    for k, v in strat_cfg.items():
+        merged[k] = v
+    return merged
+
+
+def calc_buy_and_hold_metrics(df, initial_capital=100000):
+    """
+    Buy&Hold 성과 지표 계산:
+      - final_portfolio_value
+      - Total Return
+      - CAGR
+      - Max Drawdown
+      - Sharpe Ratio
+    """
+    if len(df) < 2:
+        return {
+            "final_portfolio_value": initial_capital,
+            "Total Return": 0,
+            "CAGR": 0,
+            "Max Drawdown": 0,
+            "Sharpe Ratio": 0
+        }
+
+    # start / end
+    start_val = df["close"].iloc[0]
+    end_val   = df["close"].iloc[-1]
+    total_ret = end_val / start_val - 1
+    final_port_val = initial_capital * (1 + total_ret)
+
+    start_date = df.index[0]
+    end_date   = df.index[-1]
+    days = (end_date - start_date).days
+    years = days / 365 if days > 0 else 0
+    if years > 0:
+        cagr = (end_val / start_val) ** (1 / years) - 1
+    else:
+        cagr = 0
+
+    series = df["close"] / start_val
+    running_max = series.cummax()
+    dd = (series - running_max) / running_max
+    max_dd = dd.min()
+
+    daily_ret = df["close"].pct_change().dropna()
+    mean_ret = daily_ret.mean()
+    std_ret  = daily_ret.std()
+    sharpe = 0
+    if std_ret != 0:
+        sharpe = (mean_ret / std_ret) * (365**0.5)
+
+    return {
+        "final_portfolio_value": round(final_port_val, 2),
+        "Total Return": round(total_ret, 2),
+        "CAGR": round(cagr, 2),
+        "Max Drawdown": round(max_dd, 2),
+        "Sharpe Ratio": round(sharpe, 2)
+    }
+
+
+def update_and_load_data(symbol, intervals, start_date, end_date, origin_data_folder, warmup_period=26):
+    """
+    1) DataManager 이용해서 바이낸스 선물 데이터(또는 현물) 업데이트
+    2) CSV를 읽어서 {interval: DataFrame} 형태로 반환
+    """
+    client = create_binance_client()
+    manager = DataManager(
+        client=client,
+        symbol=symbol,
+        intervals=intervals,
+        start_date=start_date,
+        end_date=end_date,
+        save_folder=origin_data_folder,
+        warmup_period=warmup_period
     )
+    manager.update_all()
 
-##############################################################################
-# 5) 메인 함수
-##############################################################################
+    data_map = {}
+    for iv in intervals:
+        csvp = os.path.join(origin_data_folder, f"{symbol}_{iv}.csv")
+        if not os.path.exists(csvp):
+            raise FileNotFoundError(f"{csvp} not found after update!")
+        df_tmp = pd.read_csv(csvp, parse_dates=["open_time_dt"])
+        df_tmp.set_index("open_time_dt", inplace=True)
+        # 범위 필터
+        df_tmp = df_tmp[df_tmp.index >= pd.to_datetime(start_date)]
+        data_map[iv] = df_tmp
+    return data_map
+
+
+def create_cases(symbol, intervals, data_map, indicator_configs, strategy_configs, initial_capital=100000):
+    """
+    각 interval에 대해,
+    (indicator_config × strategy_config) 조합을 만들어
+    병렬 테스트용 case list를 구성
+    """
+    from itertools import product
+    cases = []
+    for iv in intervals:
+        df_iv = data_map[iv]
+        for i_cfg in indicator_configs:
+            for s_cfg in strategy_configs:
+                merged = combine_configs(i_cfg, s_cfg)
+                c = {
+                    "symbol": symbol,
+                    "interval": iv,
+                    "config": merged,
+                    "data": df_iv,
+                    "initial_capital": initial_capital
+                }
+                cases.append(c)
+    return cases
+
+
 def main():
-    clear_results_folder("results")
+    """
+    1) 사용자 설정
+    2) 데이터 업데이트 & 로드
+    3) 전수 테스트 & Buy&Hold 결과 기록
+    4) CSV 저장
+    """
+    import shutil
 
+    # [1] 사용자 설정
     symbol = "BTCUSDT"
     intervals = ["4h"]
+    start_date = "2024-01-01"
+    end_date   = "2024-12-31"
+    origin_data_folder = "data/origin_data"
+    warmup_period = 26
+    initial_capital = 100000
+    test_result_folder = "test_result"
 
-    start_str = "2024-01-01"
-    end_str = None
+    # [2] 데이터 업데이트 & 로드
+    data_map = update_and_load_data(
+        symbol=symbol,
+        intervals=intervals,
+        start_date=start_date,
+        end_date=end_date,
+        origin_data_folder=origin_data_folder,
+        warmup_period=warmup_period
+    )
 
-    csv_dir = "./data"
-    start_cash = 100000.0
-    commission = 0.002
+    # 파라미터 로딩
+    indicator_params = load_indicator_params("config/parameters.json")
+    strategy_params  = load_strategy_params("config/strategy_config.json")
 
-    paramfile = "module/config/nls2_params.json"
-    try:
-        strategy_params = load_json(paramfile)
-    except:
-        strategy_params = {}
+    # (단일 지표) 인디케이터 config & 전략 config
+    ind_confs  = generate_indicator_configs(indicator_params)
+    strat_confs= generate_strategy_configs(strategy_params)
 
-    start_ts = date_to_ms(start_str)
-    if end_str is None:
-        end_ts = int(time.time() * 1000)
-    else:
-        end_ts = date_to_ms(end_str)
+    print(f"Indicator configs: {len(ind_confs)}")
+    print(f"Strategy configs : {len(strat_confs)}")
 
-    # 기존 전략으로 각 interval 백테스트 실행
-    for interval in intervals:
-        print("\n======================================")
-        print(f"=== Interval {interval} 백테스트 시작 ===")
-        print("======================================\n")
+    # [3] interval별로 순회 → Earliest/Latest, Buy&Hold, 병렬전수테스트
+    all_results = []
 
-        csv_path = os.path.join(csv_dir, f"{symbol}_{interval}.csv")
-        df_prepared = fetch_and_prepare_data(symbol, interval, start_ts, end_ts, csv_path)
-        if df_prepared.empty:
-            print(f"[WARN] {interval}: empty df_prepared => skip.")
+    for iv in intervals:
+        print(f"[INFO] Processing interval: {iv}")
+        df_iv = data_map[iv]
+        if len(df_iv) < 2:
+            print(f"[WARN] Not enough data for interval={iv}, skipping.")
             continue
 
-        run_single_backtest(
-            df=df_prepared,
-            interval=interval,
-            symbol=symbol,
-            start_ts=start_ts,
-            end_ts=end_ts,
-            strategy_cls=None,  # 기존 논문 전략 사용 (strategy_cls=None이면 내부에서 결정)
-            strategy_params=strategy_params,
-            start_cash=start_cash,
-            commission=commission
-        )
+        # Earliest/Latest
+        earliest_date = df_iv.index.min().strftime("%Y-%m-%d %H:%M:%S")
+        latest_date   = df_iv.index.max().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 가장 큰 타임프레임에 대해 Buy & Hold 전략 실행 (예: 4h)
-    largest_tf = intervals[-1]
-    csv_path = os.path.join(csv_dir, f"{symbol}_{largest_tf}.csv")
-    df_bnh = fetch_and_prepare_data(symbol, largest_tf, start_ts, end_ts, csv_path)
-    if not df_bnh.empty:
-        run_single_backtest(
-            df=df_bnh,
-            interval=largest_tf + "(BnH)",
-            symbol=symbol,
-            start_ts=start_ts,
-            end_ts=end_ts,
-            strategy_cls=BuyAndHoldStrategy,
-            strategy_params={},
-            start_cash=start_cash,
-            commission=commission
-        )
+        info_cols = ["symbol","interval","config","final_portfolio_value",
+                     "Total Return","CAGR","Max Drawdown","Sharpe Ratio","Number of Trades"]
+        row_earliest = {c: "" for c in info_cols}
+        row_latest   = {c: "" for c in info_cols}
+
+        row_earliest["symbol"]   = "EarliestDataDate"
+        row_earliest["interval"] = earliest_date
+        row_latest["symbol"]     = "LatestDataDate"
+        row_latest["interval"]   = latest_date
+
+        all_results.append(row_earliest)
+        all_results.append(row_latest)
+
+        # Buy & Hold
+        bh_metrics = calc_buy_and_hold_metrics(df_iv, initial_capital=initial_capital)
+        bh_row = {
+            "symbol": symbol,
+            "interval": iv,
+            "config": "BUY&HOLD",
+            "final_portfolio_value": bh_metrics["final_portfolio_value"],
+            "Total Return":          bh_metrics["Total Return"],
+            "CAGR":                  bh_metrics["CAGR"],
+            "Max Drawdown":          bh_metrics["Max Drawdown"],
+            "Sharpe Ratio":          bh_metrics["Sharpe Ratio"],
+            "Number of Trades":      ""
+        }
+        all_results.append(bh_row)
+
+        # 병렬 전수테스트
+        from statistics.multiple_testing import run_multiple_tests_parallel
+        cases_for_iv = create_cases(symbol, [iv], data_map, ind_confs, strat_confs, initial_capital)
+
+        df_results_iv = run_multiple_tests_parallel(cases_for_iv)
+        # (선택) 거래 건수=0 제거
+        if "Number of Trades" in df_results_iv.columns:
+            df_results_iv = df_results_iv[df_results_iv["Number of Trades"] != 0]
+
+        records_iv = df_results_iv.to_dict("records")
+        all_results.extend(records_iv)
+
+    # [4] CSV 저장
+    if os.path.exists(test_result_folder):
+        shutil.rmtree(test_result_folder)
+    os.makedirs(test_result_folder, exist_ok=True)
+
+    col_order = ["symbol","interval","config","final_portfolio_value",
+                 "Total Return","CAGR","Max Drawdown","Sharpe Ratio","Number of Trades"]
+    df_final = pd.DataFrame(all_results, columns=col_order)
+    out_csv = os.path.join(test_result_folder, "all_test_results.csv")
+    df_final.to_csv(out_csv, index=False)
+    print(f"[INFO] Saved results => {out_csv}")
+
 
 if __name__ == "__main__":
     main()

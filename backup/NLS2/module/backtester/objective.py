@@ -1,7 +1,6 @@
 # module/backtester/objective.py
 
-import numpy as np
-from module.backtester.backtester_bt import run_backtest_bt
+from backup.NLS2.module.backtester.backtester_bt import run_backtest_bt
 
 def create_objective_function(
     df,

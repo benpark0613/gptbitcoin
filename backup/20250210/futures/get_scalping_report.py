@@ -3,15 +3,12 @@ get_futures_report.py
 import os
 import csv
 import logging
-from datetime import datetime, timedelta, time
-import pandas as pd
-import pandas_ta as ta  # pandas-ta 추가
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from binance.client import Client
 
-from module.clear_folder import clear_folder
-from module.mbinance.closed_positions import (
-    get_default_client,
+from backup.NLS2.module import clear_folder
+from backup.NLS2.module import (
     save_closed_position_csv,
     save_today_trade_stats_csv
 )

@@ -1,7 +1,7 @@
 # module/strategies/nls2_combined_progress.py
 
-from module.strategies.nls2_combined import NLS2Combined
-from module.strategies.progress_mixin import ProgressMixin
+from backup.NLS2.module.strategies.nls2_combined import NLS2Combined
+from backup.NLS2.module.strategies.progress_mixin import ProgressMixin
 
 class NLS2CombinedProgress(ProgressMixin, NLS2Combined):
     def __init__(self):

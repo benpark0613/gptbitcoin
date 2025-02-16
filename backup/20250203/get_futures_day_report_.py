@@ -4,10 +4,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 from binance.client import Client
 
-from module.mbinance.position_history import build_position_history
-from module.clear_folder import clear_folder
-from module.get_googlenews import get_latest_10_articles
-from module.get_rss_google_new import get_top_10_recent_news
+from backup.NLS2.module import build_position_history
+from backup.NLS2.module import clear_folder
 
 
 def main():

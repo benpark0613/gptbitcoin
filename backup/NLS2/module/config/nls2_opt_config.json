@@ -1,0 +1,12 @@
+{
+  "bb_period": [15, 20, 25],
+  "bb_dev": [1.5, 2.0, 2.5],
+  "vol_fast": [5, 10],
+  "vol_slow": [30, 50],
+  "sma_fast": [20, 30],
+  "sma_mid": [50, 70],
+  "sma_slow": [100, 150],
+  "sma_veryslow": [200],
+  "vli_fast": [200, 300],
+  "vli_slow": [1000]
+}

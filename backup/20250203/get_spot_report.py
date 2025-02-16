@@ -1,16 +1,11 @@
-import csv
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 import os
 
 import pandas as pd
 import pyupbit
 from dotenv import load_dotenv
 
-from module.get_googlenews import get_latest_10_articles
-from module.upbit.get_fear_and_greed import get_upbit_fear_greed_index
-from module.get_rss_google_new import get_top_10_recent_news
-from module.upbit.add_technical_indicator import add_technical_indicators
-from module.clear_folder import clear_folder
+from backup.NLS2.module import clear_folder
 
 
 def main():

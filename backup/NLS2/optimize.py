@@ -6,9 +6,9 @@ from datetime import datetime
 import pandas as pd
 
 # 최적화 관련 모듈 임포트
-from module.optimizer.scipy_optimizer import optimize_strategy_parameters
-from module.strategies.nls2_combined import NLS2Combined
-from module.data_manager.tf_data_updater import update_csv
+from backup.NLS2.module.optimizer.scipy_optimizer import optimize_strategy_parameters
+from backup.NLS2.module import NLS2Combined
+from backup.NLS2.module import update_csv
 
 
 def date_to_ms(dstr: str) -> int:

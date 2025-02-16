@@ -2,13 +2,12 @@
 
 import backtrader as bt
 import pandas as pd
-from module.backtester.bt_result import BacktestResult
+from backup.NLS2.module.backtester.bt_result import BacktestResult
 
 # 기존 논문 전략
-from module.strategies.nls2_combined import NLS2Combined
-from module.strategies.nls2_combined_progress import NLS2CombinedProgress
+from backup.NLS2.module.strategies.nls2_combined import NLS2Combined
+from backup.NLS2.module.strategies.nls2_combined_progress import NLS2CombinedProgress
 # 새로 추가된 Buy & Hold 전략
-from module.strategies.buy_and_hold import BuyAndHoldStrategy
 
 def run_backtest_bt(
     df: pd.DataFrame,

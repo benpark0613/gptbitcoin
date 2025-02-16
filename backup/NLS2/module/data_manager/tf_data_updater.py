@@ -1,9 +1,8 @@
 # module/data_manager/tf_data_updater.py
 
-import os
 import pandas as pd
 from pathlib import Path
-from module.binance_api.binance_fetch import fetch_binance_klines
+from backup.NLS2.module.binance_api.binance_fetch import fetch_binance_klines
 
 
 def update_csv(symbol: str, interval: str, start_ts: int, end_ts: int, csv_path: str) -> pd.DataFrame:
