@@ -1,8 +1,7 @@
 # strategies/strategy.py
 
 import pandas as pd
-import numpy as np
-from strategies.signal_generator import SignalGenerator
+from backup.multi_inticator.strategies.signal_generator import SignalGenerator
 
 class Strategy:
     """

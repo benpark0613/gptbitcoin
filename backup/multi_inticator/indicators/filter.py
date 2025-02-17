@@ -1,7 +1,7 @@
 # indicators/filter.py
 
 import pandas as pd
-from indicators.IndicatorBase import IndicatorBase
+from backup.multi_inticator.indicators.IndicatorBase import IndicatorBase
 
 class FilterIndicator(IndicatorBase):
     def __init__(self, x=0.05, y=0.05, window=10, d=0):

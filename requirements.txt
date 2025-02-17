@@ -1,11 +1,8 @@
-python-dotenv
-pyupbit
-selenium
-webdriver-manager
-Pillow
-plotly
-schedule
-beautifulsoup4
+pandas
+numpy
 python-binance
 pandas-ta
-pandas
+backtrader
+tqdm
+requests
+python-dotenv

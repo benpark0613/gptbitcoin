@@ -1,27 +1,41 @@
-# indicators/obv.py
+# obv.py
 
 import pandas as pd
-import pandas_ta as ta
-from indicators.IndicatorBase import IndicatorBase
 
-class OBVIndicator(IndicatorBase):
-    def __init__(self, short_period=2, long_period=6):
-        super().__init__()
-        self.short_period = int(short_period)
-        self.long_period = int(long_period)
+def obv_signal(df, short_p, long_p):
+    obv = [0]
+    for i in range(1, len(df)):
+        if df['close'].iloc[i] > df['close'].iloc[i-1]:
+            obv.append(obv[-1] + df['volume'].iloc[i])
+        elif df['close'].iloc[i] < df['close'].iloc[i-1]:
+            obv.append(obv[-1] - df['volume'].iloc[i])
+        else:
+            obv.append(obv[-1])
+    df['obv'] = obv
+    df['obv_sma_short'] = df['obv'].rolling(short_p).mean()
+    df['obv_sma_long'] = df['obv'].rolling(long_p).mean()
 
-    def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
-        df = df.copy()
-        df["close"] = pd.to_numeric(df["close"], errors="coerce").ffill().bfill().astype(float)
-        df["volume"] = pd.to_numeric(df["volume"], errors="coerce").ffill().bfill().astype(float)
+    # 크로스 발생 로직
+    df['obv_sma_short_prev'] = df['obv_sma_short'].shift(1)
+    df['obv_sma_long_prev'] = df['obv_sma_long'].shift(1)
 
-        df["obv"] = ta.obv(df["close"], df["volume"])
-        df["obv_short"] = ta.sma(df["obv"], length=self.short_period)
-        df["obv_long"] = ta.sma(df["obv"], length=self.long_period)
-
-        df["signal"] = 0
-        valid = df["obv_short"].notna() & df["obv_long"].notna()
-        df.loc[valid & (df["obv_short"] > df["obv_long"]), "signal"] = 1
-        df.loc[valid & (df["obv_short"] < df["obv_long"]), "signal"] = -1
-
-        return df[["obv","obv_short","obv_long","signal"]]
+    signals = []
+    for i in range(len(df)):
+        s_now = df['obv_sma_short'].iloc[i]
+        l_now = df['obv_sma_long'].iloc[i]
+        s_prev = df['obv_sma_short_prev'].iloc[i]
+        l_prev = df['obv_sma_long_prev'].iloc[i]
+        if pd.isna(s_now) or pd.isna(l_now) or pd.isna(s_prev) or pd.isna(l_prev):
+            signals.append(0)
+        else:
+            cross_up = (s_prev <= l_prev) and (s_now > l_now)
+            cross_down = (s_prev >= l_prev) and (s_now < l_now)
+            if cross_up:
+                signals.append(1)
+            elif cross_down:
+                signals.append(-1)
+            else:
+                signals.append(0)
+    df['signal'] = signals
+    return df.drop(['obv','obv_sma_short','obv_sma_long',
+                    'obv_sma_short_prev','obv_sma_long_prev'], axis=1)

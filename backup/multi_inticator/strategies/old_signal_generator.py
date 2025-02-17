@@ -3,12 +3,12 @@
 import pandas as pd
 
 # 인디케이터별 클래스 임포트
-from indicators.ma import MAIndicator
-from indicators.rsi import RSIIndicator
-from indicators.filter import FilterIndicator
-from indicators.channel_breakout import ChannelBreakoutIndicator
-from indicators.obv import OBVIndicator
-from indicators.support_resistance import SupportResistanceIndicator
+from backup.multi_inticator.indicators import MAIndicator
+from backup.multi_inticator.indicators import RSIIndicator
+from backup.multi_inticator.indicators import FilterIndicator
+from backup.multi_inticator.indicators import ChannelBreakoutIndicator
+from backup.multi_inticator.indicators import OBVIndicator
+from backup.multi_inticator.indicators import SupportResistanceIndicator
 
 class SignalGenerator:
     def __init__(self, config, combiner=None):

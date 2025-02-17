@@ -1,50 +1,28 @@
-# indicators/support_resistance.py
+# support_resistance.py
 
 import pandas as pd
-from indicators.IndicatorBase import IndicatorBase
 
-class SupportResistanceIndicator(IndicatorBase):
-    def __init__(self, window=20):
-        """
-        :param window: 롤링 윈도우 길이
-        """
-        super().__init__()
-        self.window = int(window)
+def support_resistance_signal(df, window):
+    df['roll_min'] = df['close'].rolling(window).min()
+    df['roll_max'] = df['close'].rolling(window).max()
+    df['roll_min_prev'] = df['roll_min'].shift(1)
+    df['roll_max_prev'] = df['roll_max'].shift(1)
 
-    def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        support = rolling min(low)
-        resistance = rolling max(high)
-        - 종가가 이전 bar의 resistance 초과 -> 매수
-        - 종가가 이전 bar의 support 미만 -> 매도
-        """
-        df = df.copy()
-        df["low"] = pd.to_numeric(df["low"], errors="coerce").ffill().bfill()
-        df["high"] = pd.to_numeric(df["high"], errors="coerce").ffill().bfill()
-        df["close"] = pd.to_numeric(df["close"], errors="coerce").ffill().bfill()
-
-        df["support"] = df["low"].rolling(window=self.window, min_periods=1).min()
-        df["resistance"] = df["high"].rolling(window=self.window, min_periods=1).max()
-
-        df["support_prev"] = df["support"].shift(1)
-        df["resistance_prev"] = df["resistance"].shift(1)
-
-        df["signal"] = 0
-        df.loc[df["close"] > df["resistance_prev"], "signal"] = 1
-        df.loc[df["close"] < df["support_prev"], "signal"] = -1
-
-        return df[["support", "resistance", "signal"]]
-
-
-if __name__ == "__main__":
-    import numpy as np
-    dates = pd.date_range(start="2025-01-01", periods=20, freq="D")
-    sample_df = pd.DataFrame({
-        "low": np.random.uniform(20000,30000,20),
-        "high": np.random.uniform(40000,50000,20),
-        "close": np.random.uniform(30000,40000,20)
-    }, index=dates)
-
-    sr_indicator = SupportResistanceIndicator(window=20)
-    result = sr_indicator.generate_signals(sample_df)
-    print(result)
+    signals = []
+    for i in range(len(df)):
+        c = df['close'].iloc[i]
+        mn_p = df['roll_min_prev'].iloc[i]
+        mx_p = df['roll_max_prev'].iloc[i]
+        if pd.isna(mn_p) or pd.isna(mx_p):
+            signals.append(0)
+        else:
+            cross_up = (c > mx_p)
+            cross_down = (c < mn_p)
+            if cross_up:
+                signals.append(1)
+            elif cross_down:
+                signals.append(-1)
+            else:
+                signals.append(0)
+    df['signal'] = signals
+    return df.drop(['roll_min','roll_max','roll_min_prev','roll_max_prev'], axis=1)

@@ -2,7 +2,7 @@
 
 import pandas as pd
 import pandas_ta as ta
-from indicators.IndicatorBase import IndicatorBase
+from backup.multi_inticator.indicators.IndicatorBase import IndicatorBase
 
 
 class MAIndicator(IndicatorBase):

@@ -1,11 +1,10 @@
 # backtesting/parallel_runner.py
 
-import os
 import pandas as pd
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-from strategies.strategy import Strategy
-from backtesting.backtester import Backtester
+from backup.multi_inticator.strategies import Strategy
+from backup.multi_inticator.backtesting.backtester import Backtester
 
 class ParallelBacktester:
     def __init__(self, cases, max_workers=None):

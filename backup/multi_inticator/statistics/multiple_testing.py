@@ -1,12 +1,11 @@
 # statistics/multiple_testing.py
 
 import pandas as pd
-import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 
-from backtesting.backtester import Backtester
-from strategies.strategy import Strategy
+from backup.multi_inticator.backtesting.backtester import Backtester
+from backup.multi_inticator.strategies.strategy import Strategy
 
 def run_single_case(case):
     """

@@ -4,11 +4,9 @@ import os
 import pandas as pd
 
 # 필요한 모듈 임포트
-from utils.helper import create_binance_client
-from data.data_manager import DataManager
-from statistics.multiple_testing import run_multiple_tests_parallel
-from strategies.strategy import Strategy
-from backtesting.backtester import Backtester
+from backup.multi_inticator.helper import create_binance_client
+from backup.multi_inticator.data import DataManager
+
 
 def load_indicator_params(path="config/parameters.json"):
     """
@@ -288,7 +286,6 @@ def create_cases(symbol, intervals, data_map, indicator_configs, strategy_config
     (indicator_config × strategy_config) 조합을 만들어
     병렬 테스트용 case list를 구성
     """
-    from itertools import product
     cases = []
     for iv in intervals:
         df_iv = data_map[iv]
@@ -389,7 +386,7 @@ def main():
         all_results.append(bh_row)
 
         # 병렬 전수테스트
-        from statistics.multiple_testing import run_multiple_tests_parallel
+        from backup.multi_inticator.statistics import run_multiple_tests_parallel
         cases_for_iv = create_cases(symbol, [iv], data_map, ind_confs, strat_confs, initial_capital)
 
         df_results_iv = run_multiple_tests_parallel(cases_for_iv)

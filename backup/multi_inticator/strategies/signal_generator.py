@@ -8,12 +8,12 @@
 import pandas as pd
 
 # 개별 지표(Indicator) 클래스들
-from indicators.ma import MAIndicator
-from indicators.rsi import RSIIndicator
-from indicators.filter import FilterIndicator
-from indicators.channel_breakout import ChannelBreakoutIndicator
-from indicators.obv import OBVIndicator
-from indicators.support_resistance import SupportResistanceIndicator
+from backup.multi_inticator.indicators import MAIndicator
+from backup.multi_inticator.indicators import RSIIndicator
+from backup.multi_inticator.indicators import FilterIndicator
+from backup.multi_inticator.indicators import ChannelBreakoutIndicator
+from backup.multi_inticator.indicators import OBVIndicator
+from backup.multi_inticator.indicators import SupportResistanceIndicator
 
 
 class SignalGenerator:

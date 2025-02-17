@@ -2,9 +2,8 @@
 
 import os
 import pandas as pd
-from binance.client import Client
-from data.collector import fetch_futures_ohlcv
-from utils.helper import save_csv, prepare_futures_df
+from backup.multi_inticator.data.collector import fetch_futures_ohlcv
+from backup.multi_inticator.helper import save_csv, prepare_futures_df
 
 class DataManager:
     def __init__(self, client, symbol, intervals, start_date, end_date, save_folder, warmup_period=26):

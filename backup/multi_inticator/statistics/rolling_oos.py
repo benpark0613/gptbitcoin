@@ -1,9 +1,9 @@
 # statistics/rolling_oos.py
 
 import pandas as pd
-from backtesting.backtester import Backtester
-from strategies.strategy import Strategy
-from statistics.multiple_testing import combine_configs
+from backup.multi_inticator.backtesting.backtester import Backtester
+from backup.multi_inticator.strategies.strategy import Strategy
+from backup.multi_inticator.statistics.multiple_testing import combine_configs
 
 def rolling_oos_evaluation(data, indicator_configs, strategy_configs,
                            lookback_period=365, oos_period=30, initial_capital=100000):
@@ -113,8 +113,8 @@ def main_rolling():
     }, index=dates)
 
     # 예시: indicator_configs, strategy_configs
-    from statistics.multiple_testing import (load_indicator_params, load_strategy_params,
-                                             generate_indicator_configs, generate_strategy_configs)
+    from backup.multi_inticator.statistics.multiple_testing import (load_indicator_params, load_strategy_params,
+                                                                    generate_indicator_configs, generate_strategy_configs)
 
     indicator_params = load_indicator_params("config/parameters.json")
     strategy_params = load_strategy_params("config/strategy_config.json")

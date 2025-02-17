@@ -2,7 +2,7 @@
 
 import pandas as pd
 import numpy as np
-from strategies.strategy import Strategy
+from backup.multi_inticator.strategies import Strategy
 
 class Backtester:
     def __init__(self, strategy: Strategy, data: pd.DataFrame, initial_capital=100000):
