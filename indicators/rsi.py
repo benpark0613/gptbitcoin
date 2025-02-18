@@ -27,11 +27,10 @@ def rsi_signal(
     oversold : float, optional
         RSI가 이 값보다 내려가면 과매도 상태. (기본 30)
     band_filter : float, optional
-        (overbought ± band_filter) 또는 (oversold ± band_filter) 같은 식으로
-        특정 추가 범위를 넘어야 유효 신호로 볼 때 사용.
-        논문에서는 %단위 filter 적용.
+        (overbought ± band_filter) 또는 (oversold ± band_filter) 식으로
+        일정 추가 범위를 넘어야 유효 신호로 볼 때 사용.
     delay_filter : int, optional
-        신호가 나온 뒤, 최근 delay_filter개 캔들 연속으로 같은 신호가 있어야 최종 확정.
+        새 신호가 나온 뒤, 최근 delay_filter개 캔들 연속으로 같은 신호가 있어야 최종 확정.
     holding_period : int or str, optional
         - 정수(6,12 등): 포지션 진입 후 n캔들 동안 반대 신호 무시.
         - 'inf': 시간 제한 없이 반대 신호가 오면 즉시 전환(논문 의도).
@@ -41,26 +40,20 @@ def rsi_signal(
     pd.Series
         +1(매수), -1(매도), 0(중립) 로 구성된 시리즈 (rsi_signal).
     """
-    # 1) RSI 계산
-    #    RSI = 100 - (100 / (1 + RS))
-    #    RS = 평균 상승폭 / 평균 하락폭
-    # 일반적으로 Wilder의 공식(EMA 기반) 또는 SMA를 사용할 수 있으나
-    # 여기서는 단순화하여 SMA 기반으로 작성 예시
 
+    # 1) RSI 계산
     close_diff = df["close"].diff()
     gain = close_diff.where(close_diff > 0, 0.0)
     loss = -close_diff.where(close_diff < 0, 0.0)
 
-    # 이동평균(간단히 SMA 사용), 논문에서는 다양한 방법 중 하나 사용
+    # SMA 기반 평균 상승폭/하락폭
     avg_gain = gain.rolling(length).mean()
     avg_loss = loss.rolling(length).mean()
 
-    rs = avg_gain / (avg_loss + 1e-12)  # 0으로 나눗셈 방지용
+    rs = avg_gain / (avg_loss + 1e-12)  # 0 나눗셈 방지
     rsi = 100 - (100 / (1 + rs))
 
     # 2) band_filter 적용
-    #   예: overbought=70, band_filter=0.02 => 70 * (1 ± 0.02) 식으로 범위 조정 가능
-    #   여기서는 단순히 overbought ± (band_filter*overbought), oversold ± (band_filter*oversold) 로 가정
     upper_band = overbought + (overbought * band_filter)
     lower_band = oversold   - (oversold   * band_filter)
 
@@ -68,12 +61,8 @@ def rsi_signal(
     #    - RSI가 아래에서 위로 oversold → lower_band 구간 돌파하면 매수(+1)
     #    - RSI가 위에서 아래로 overbought → upper_band 구간 돌파하면 매도(-1)
     #    - 그 외 0
-    # 실제론 '돌파' 구간 감지 로직 등을 더 정교하게 짤 수도 있음
     raw_signal = np.zeros(len(rsi), dtype=int)
 
-    # 단순 규칙: RSI가 oversold보다 낮았다가 새로 lower_band를 상향 돌파 → +1
-    #           RSI가 overbought보다 높았다가 새로 upper_band를 하향 돌파 → -1
-    # 여기서는 전 시점과의 비교로 간단히 작성
     prev_rsi = rsi.shift(1)
 
     for i in range(len(rsi)):
@@ -82,10 +71,10 @@ def rsi_signal(
             continue
 
         # (이전 RSI < lower_band) & (현재 RSI >= lower_band) → 매수
-        if (prev_rsi[i] < lower_band) and (rsi[i] >= lower_band):
+        if (prev_rsi.iloc[i] < lower_band) and (rsi.iloc[i] >= lower_band):
             raw_signal[i] = 1
-        # (이전 RSI >  upper_band) & (현재 RSI <= upper_band) → 매도
-        elif (prev_rsi[i] > upper_band) and (rsi[i] <= upper_band):
+        # (이전 RSI > upper_band) & (현재 RSI <= upper_band) → 매도
+        elif (prev_rsi.iloc[i] > upper_band) and (rsi.iloc[i] <= upper_band):
             raw_signal[i] = -1
         else:
             raw_signal[i] = 0
@@ -123,15 +112,12 @@ def rsi_signal(
             else:
                 final_signal[i] = raw_signal[i]
 
-            # (3) 새 신호가 이전과 달라진 경우, 포지션 업데이트
+            # (3) 새 신호가 이전과 달라지면 포지션 업데이트
             if final_signal[i] != final_signal[i - 1]:
                 current_pos = final_signal[i]
-
                 if is_inf:
-                    # 'inf'이면 시간 제한 없이 반대 신호 시 바로 변경
                     hold_count = 0
                 else:
-                    # 정수형 holding_period만큼 보유
                     hold_count = holding_period if current_pos != 0 else 0
 
     return pd.Series(final_signal, index=df.index, name="rsi_signal")

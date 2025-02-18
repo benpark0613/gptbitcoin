@@ -14,7 +14,7 @@ LEVERAGE = 1         # 레버리지 배수 (1이면 미사용, 2 이상으로 �
 ALLOW_SHORT = True   # True면 숏 포지션 허용. False면 인-아웃(현금/롱)만 가능
 INIT_CAPITAL = 100000 # 초기 자본금 (USD 기준 예시)
 
-START_DATE = "2024-01-01" # 백테스트 시작일
+START_DATE = "2024-12-01" # 백테스트 시작일
 END_DATE   = "2024-12-31" # 백테스트 종료일
 
 TRAIN_RATIO = 0.7    # 전체 데이터 중 앞 70% 구간을 학습(In-Sample), 뒤 30%를 검증(OOS)으로 사용

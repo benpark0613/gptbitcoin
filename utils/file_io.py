@@ -1,24 +1,10 @@
-# utils/file_io.py
-
-"""
-file_io.py
-
-데이터 폴더를 관리하는 유틸리티 모듈.
-"""
+# gptbitcoin/utils/file_io.py
 
 import os
 import shutil
+import pandas as pd
 
 def clean_data_folder(path: str) -> None:
-    """
-    주어진 폴더(path)가 없으면 생성하고,
-    존재할 경우 내부의 모든 파일/폴더를 삭제한다.
-
-    Parameters
-    ----------
-    path : str
-        폴더 경로
-    """
     if not os.path.exists(path):
         os.makedirs(path)
     else:
@@ -28,3 +14,15 @@ def clean_data_folder(path: str) -> None:
                 os.remove(fp)
             else:
                 shutil.rmtree(fp)
+
+def save_summary_to_csv(df_summary: pd.DataFrame, out_path: str) -> None:
+    """
+    백테스트 결과 요약 df_summary를 CSV로 저장하되,
+    float_format='%.2f'로 지정해 소수점 둘째 자리까지만 표현.
+    """
+    folder = os.path.dirname(out_path)
+    if folder and not os.path.exists(folder):
+        os.makedirs(folder)
+
+    # 소수점 2자리 표시
+    df_summary.to_csv(out_path, index=False, float_format="%.2f")

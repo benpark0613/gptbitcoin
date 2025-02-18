@@ -1,75 +1,93 @@
 # gptbitcoin/main.py
 
+import os
 import pandas as pd
+
 from settings import config
 from utils.binance_data import BinanceDataFetcher
 from settings.param_combinations import generate_all_combinations
-from backtester.oos_evaluation import run_is_oos_evaluation
 from signals.generate_signals import generate_signals_func
+from backtester.oos_evaluation import run_is_oos_evaluation
+
+# 결과 요약 모듈
+from utils.results_summary import (
+    append_buy_and_hold_result,
+    append_combo_results
+)
+from utils.file_io import save_summary_to_csv
+
+# time_utils (if used for timeframe_hours)
+from utils.time_utils import infer_timeframe_hours
 
 def main():
     """
-    메인 함수:
-      1) 바이낸스에서 선물 K라인 데이터를 불러옴
-      2) 모든 파라미터 조합(all_combos)에 대해 In-Sample(IS) 평가 후 저조 전략 제외
-      3) 남은 전략들만 Out-of-Sample(OOS) 구간에서 재평가
-      4) Buy & Hold(IS/OOS) 성과와 최종 통과 전략 수 출력
+    1) config.TIMEFRAMES 순회해 데이터 로드
+    2) run_is_oos_evaluation() -> IS/OOS 백테스트 (IS=lite, OOS=상세)
+       - 백테스트 후 metrics에 'start_cap','end_cap'이 들어 있음
+    3) B/H + 콤보 성과 append_*함수로 summary_rows에 추가
+    4) CSV 저장
     """
-    # 1) 바이낸스 데이터 불러오기
-    fetcher = BinanceDataFetcher()
-    symbol = config.SYMBOL
-    interval = config.TIMEFRAMES[0] if config.TIMEFRAMES else "4h"
-    df = fetcher.fetch_futures_klines(
-        symbol=symbol,
-        interval=interval,
-        start_date=config.START_DATE,
-        end_date=config.END_DATE
-    )
-    if df.empty:
-        print("No data fetched. Check API or date range.")
-        return
-
-    # 시계열 인덱스로 전처리
-    df = df.set_index("open_time").sort_index()
-
-    # 2) 전수 파라미터 조합 생성
     all_combos = generate_all_combinations()
+    print(f"Total param combos: {len(all_combos)}")
 
-    # 3) IS/OOS 평가 파이프라인
-    results = run_is_oos_evaluation(
-        df=df,
-        param_combinations=all_combos,
-        generate_signals_func=generate_signals_func,
-        initial_capital=config.INIT_CAPITAL,
-        train_ratio=config.TRAIN_RATIO,
-        timeframe_hours=4.0 if interval.endswith("h") else 24.0,
-        scale_slippage=True,
-        compare_to_buyandhold=True,  # Buy & Hold와 성과 비교
-        cagr_threshold=0.0,         # 추가 필터(연수익률 등) 없으면 0
-        sharpe_threshold=0.0
-    )
+    summary_rows = []
 
-    # 4) 결과 요약 출력
-    print("=== In-Sample Buy & Hold Metrics ===")
-    print(results["metrics_bh_is"])
-    print("\n=== Out-of-Sample Buy & Hold Metrics ===")
-    print(results["metrics_bh_oos"])
+    for interval in config.TIMEFRAMES:
+        print(f"\n=== Processing timeframe: {interval} ===")
 
-    excl_count = len(results["excluded_in_is"])
-    print(f"\nExcluded in IS (performance below threshold or B&H): {excl_count}")
-    oos_ok_count = len(results["oos_results"])
-    print(f"OOS Passed combos: {oos_ok_count}")
+        # (1) 바이낸스 데이터 로드
+        fetcher = BinanceDataFetcher()
+        df = fetcher.fetch_futures_klines(
+            symbol=config.SYMBOL,
+            interval=interval,
+            start_date=config.START_DATE,
+            end_date=config.END_DATE
+        )
+        if df.empty:
+            print(f"No data fetched for {interval}. Skipping.")
+            continue
 
-    # 예시로 OOS 통과 전략 중 첫 번째 전략의 파라미터와 성과 지표를 출력
-    if oos_ok_count > 0:
-        sample_key = next(iter(results["oos_results"]))
-        sample_params = results["oos_results"][sample_key]["params"]
-        sample_metrics = results["oos_results"][sample_key]["metrics"]
-        print("\n=== Example OOS Strategy ===")
-        print("Params:", sample_params)
-        print("Metrics:", sample_metrics)
+        df = df.set_index("open_time").sort_index()
+
+        # (2) IS/OOS
+        tf_hours = infer_timeframe_hours(interval)
+        results = run_is_oos_evaluation(
+            df=df,
+            param_combinations=all_combos,
+            generate_signals_func=generate_signals_func,
+            initial_capital=config.INIT_CAPITAL,
+            train_ratio=config.TRAIN_RATIO,
+            timeframe_hours=tf_hours,
+            scale_slippage=True,
+            compare_to_buyandhold=True,
+            cagr_threshold=0.0,
+            sharpe_threshold=0.0
+        )
+
+        # B/H 성과
+        bh_is  = results["metrics_bh_is"]   # dict
+        bh_oos = results["metrics_bh_oos"]  # dict
+
+        # (3) B/H 결과 요약
+        append_buy_and_hold_result(summary_rows, interval, bh_is, bh_oos)
+
+        # 콤보별
+        is_results     = results["is_results"]
+        oos_results    = results["oos_results"]
+        excluded_in_is = results["excluded_in_is"]
+
+        # (4) 콤보 결과 요약
+        append_combo_results(summary_rows, interval, is_results, oos_results, excluded_in_is)
+
+    # (5) CSV 저장
+    if summary_rows:
+        df_summary = pd.DataFrame(summary_rows)
+        out_csv = os.path.join(config.RESULTS_PATH, "results_summary.csv")
+        save_summary_to_csv(df_summary, out_csv)
+        print(f"\n[INFO] Summary saved to {out_csv}. Rows={len(df_summary)}")
     else:
-        print("\nNo strategies passed OOS evaluation.")
+        print("[INFO] No summary rows. Possibly no data or no TIMEFRAMES processed.")
+
 
 if __name__ == "__main__":
     main()
