@@ -1,7 +1,6 @@
 # gptbitcoin/backtester/backtest_engine.py
 
 import pandas as pd
-import numpy as np
 from settings import config
 
 def run_backtest(
