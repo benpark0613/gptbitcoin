@@ -1,4 +1,4 @@
-# data/data_manager.py
+# data_fetcher/data_manager.py
 
 import os
 import pandas as pd

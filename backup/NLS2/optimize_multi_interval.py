@@ -41,7 +41,7 @@ def main():
     # 사용자 설정
     symbol = "BTCUSDT"
     intervals = ["1h"]  # 사용자가 원하는 시간프레임 배열
-    csv_dir = "data"
+    csv_dir = "data_fetcher"
 
     # 사용자가 지정한 백테스트 기간
     start_date = "2019-10-01"
@@ -70,7 +70,7 @@ def main():
         csv_path = os.path.join(csv_dir, csv_file)
 
         if not os.path.exists(csv_path):
-            print(f"[INFO] CSV file {csv_path} not found. Updating CSV data...")
+            print(f"[INFO] CSV file {csv_path} not found. Updating CSV data_fetcher...")
             update_csv(symbol, interval, start_ts, end_ts, csv_path)
 
         df = pd.read_csv(csv_path)

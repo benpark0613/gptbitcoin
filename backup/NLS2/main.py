@@ -177,7 +177,7 @@ def main():
     start_str = "2024-01-01"
     end_str = None
 
-    csv_dir = "./data"
+    csv_dir = "./data_fetcher"
     start_cash = 100000.0
     commission = 0.002
 

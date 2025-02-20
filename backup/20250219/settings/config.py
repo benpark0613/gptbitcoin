@@ -19,7 +19,7 @@ END_DATE   = "2024-12-31" # 백테스트 종료일
 
 TRAIN_RATIO = 0.7    # 전체 데이터 중 앞 70% 구간을 학습(In-Sample), 뒤 30%를 검증(OOS)으로 사용
 
-DATA_PATH    = "./data/"    # 데이터 저장 폴더
+DATA_PATH    = "./data_fetcher/"    # 데이터 저장 폴더
 RESULTS_PATH = "./results/" # 백테스트 결과 저장 폴더
 
 # 가능한 모든 타임프레임 리스트 (5m ~ 1M 등)

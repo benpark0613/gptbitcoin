@@ -140,19 +140,19 @@ def generate_reflection(trades_df, current_market_data):
             {
                 "role": "user",
                 "content": f"""
-                Recent trading data:
+                Recent trading data_fetcher:
                 {trades_df.to_json(orient='records')}
 
-                Current market data:
+                Current market data_fetcher:
                 {current_market_data}
 
                 Overall performance in the last 7 days: {performance:.2f}%
 
-                Please analyze this data and provide:
+                Please analyze this data_fetcher and provide:
                 1. A brief reflection on the recent trading decisions
                 2. Insights on what worked well and what didn't
                 3. Suggestions for improvement in future trading decisions
-                4. Any patterns or trends you notice in the market data
+                4. Any patterns or trends you notice in the market data_fetcher
 
                 Limit your response to 250 words or less.
                 """,
@@ -262,7 +262,7 @@ def get_fear_and_greed_index():
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
-        return data["data"][0]
+        return data["data_fetcher"][0]
     except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching Fear and Greed Index: {e}")
         return None
@@ -361,9 +361,9 @@ def ai_trading():
                 messages=[
                     {
                         "role": "system",
-                        "content": f"""You are an expert in Bitcoin investing. This analysis is performed every 8 hours. Analyze the provided data and determine whether to buy, sell, or hold at the current moment. Consider the following in your analysis:
+                        "content": f"""You are an expert in Bitcoin investing. This analysis is performed every 8 hours. Analyze the provided data_fetcher and determine whether to buy, sell, or hold at the current moment. Consider the following in your analysis:
 
-                        - Technical indicators and market data
+                        - Technical indicators and market data_fetcher
                         - Recent news headlines and their potential impact on Bitcoin price
                         - The Fear and Greed Index and its implications
                         - Overall market sentiment
@@ -382,7 +382,7 @@ def ai_trading():
                         3. Reason for your decision
 
                         Ensure that the percentage is an integer between 1 and 100 for buy/sell decisions, and exactly 0 for hold decisions.
-                        Your percentage should reflect the strength of your conviction in the decision based on the analyzed data.""",
+                        Your percentage should reflect the strength of your conviction in the decision based on the analyzed data_fetcher.""",
                     },
                     {
                         "role": "user",

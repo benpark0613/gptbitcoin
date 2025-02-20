@@ -23,7 +23,7 @@ class ParallelBacktester:
                    ...
                },
                "initial_capital": 100000,
-               "data": (OHLCV DataFrame)
+               "data_fetcher": (OHLCV DataFrame)
             }
         :param max_workers: 병렬 실행 시 워커(프로세스) 수 (None이면 기본)
         """
@@ -40,7 +40,7 @@ class ParallelBacktester:
         end_date = case["end_date"]
         config = case["config"]  # 인디케이터 + 전략 파라미터 통합
         initial_capital = case.get("initial_capital", 100000)
-        data = case["data"]
+        data = case["data_fetcher"]
 
         # 전략 생성
         strategy = Strategy(config, initial_capital=initial_capital)
@@ -78,7 +78,7 @@ class ParallelBacktester:
 if __name__ == "__main__":
     import numpy as np
 
-    # 샘플 data 생성
+    # 샘플 data_fetcher 생성
     dates = pd.date_range("2025-01-01", periods=100, freq="D")
     sample_data = pd.DataFrame({
         "open": np.random.uniform(30000, 40000, size=100),
@@ -104,7 +104,7 @@ if __name__ == "__main__":
         "end_date": "2024-12-31",
         "config": config_example,
         "initial_capital": 100000,
-        "data": sample_data
+        "data_fetcher": sample_data
     }
 
     # 여러 case 예시 (실제로는 여러 파라미터 조합을 cases에 추가)

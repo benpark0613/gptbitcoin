@@ -296,7 +296,7 @@ def create_cases(symbol, intervals, data_map, indicator_configs, strategy_config
                     "symbol": symbol,
                     "interval": iv,
                     "config": merged,
-                    "data": df_iv,
+                    "data_fetcher": df_iv,
                     "initial_capital": initial_capital
                 }
                 cases.append(c)
@@ -317,7 +317,7 @@ def main():
     intervals = ["4h"]
     start_date = "2024-01-01"
     end_date   = "2024-12-31"
-    origin_data_folder = "data/origin_data"
+    origin_data_folder = "data_fetcher/origin_data"
     warmup_period = 26
     initial_capital = 100000
     test_result_folder = "test_result"
@@ -350,7 +350,7 @@ def main():
         print(f"[INFO] Processing interval: {iv}")
         df_iv = data_map[iv]
         if len(df_iv) < 2:
-            print(f"[WARN] Not enough data for interval={iv}, skipping.")
+            print(f"[WARN] Not enough data_fetcher for interval={iv}, skipping.")
             continue
 
         # Earliest/Latest

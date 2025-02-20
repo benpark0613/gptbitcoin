@@ -14,17 +14,17 @@ def main():
     end_ts = int(time.time() * 1000)  # 현재 UTC ms
     start_ts = end_ts - (24 * 60 * 60 * 1000)  # 1일 전
 
-    csv_path = f"./data/{symbol}_{interval}.csv"
+    csv_path = f"./data_fetcher/{symbol}_{interval}.csv"
 
     try:
         df = update_csv(symbol, interval, start_ts, end_ts, csv_path)
-        print(f"Fetched/updated data count: {len(df)}")
+        print(f"Fetched/updated data_fetcher count: {len(df)}")
         if not df.empty:
             first_ts = df.iloc[0]['open_time']
             last_ts = df.iloc[-1]['open_time']
             print(f"Data range: {first_ts} ~ {last_ts}")
         else:
-            print("No data returned within the specified range.")
+            print("No data_fetcher returned within the specified range.")
     except Exception as e:
         print(f"Error during update_csv: {e}")
         sys.exit(1)

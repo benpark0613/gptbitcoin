@@ -19,7 +19,7 @@ def ai_trading():
         "content": [
             {
             "type": "text",
-            "text": "You are a Bitcoin investment expert. Based on the provided chart data, let me know whether I should buy, sell, or hold. response in Json format.\n\nResponse Example:\n{\"decision\":\"buy\",\"reason\":\"some technical reason\"}\n{\"decision\":\"hold\",\"reason\":\"some technical reason\"}\n{\"decision\":\"sell\",\"reason\":\"some technical reason\"}"
+            "text": "You are a Bitcoin investment expert. Based on the provided chart data_fetcher, let me know whether I should buy, sell, or hold. response in Json format.\n\nResponse Example:\n{\"decision\":\"buy\",\"reason\":\"some technical reason\"}\n{\"decision\":\"hold\",\"reason\":\"some technical reason\"}\n{\"decision\":\"sell\",\"reason\":\"some technical reason\"}"
             }
         ]
         },

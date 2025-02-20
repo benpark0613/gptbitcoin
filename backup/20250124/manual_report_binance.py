@@ -63,7 +63,7 @@ def save_ohlcv_to_csv(symbol, interval, folder_path, limit=500):
 
     csv_filename = os.path.join(folder_path, f"{symbol}_{interval}.csv")
     df.to_csv(csv_filename, index=False)
-    logger.info(f"{symbol} OHLCV data saved to {csv_filename}")
+    logger.info(f"{symbol} OHLCV data_fetcher saved to {csv_filename}")
 
 # ============== (5) 구글 뉴스 크롤링 관련 함수 ==============
 def generate_url(query, start=0, date_filter='m'):
@@ -134,12 +134,12 @@ def save_news_to_csv(data, folder_path):
         writer = csv.DictWriter(csv_file, fieldnames=["title", "link", "snippet", "date", "source"])
         writer.writeheader()
         writer.writerows(data)
-    logger.info(f"Google News data saved to {csv_path}")
+    logger.info(f"Google News data_fetcher saved to {csv_path}")
 
 # ============== (6) 공포 탐욕 지수(Fear & Greed Index) CSV 저장 함수 ==============
 def save_fng_to_csv(fear_greed_index, folder_path):
     if not fear_greed_index:
-        logger.warning("No fear_greed_index data available to save.")
+        logger.warning("No fear_greed_index data_fetcher available to save.")
         return
 
     csv_filename = os.path.join(folder_path, "fear_greed_index.csv")
@@ -188,11 +188,11 @@ if __name__ == "__main__":
     if news_data:
         save_news_to_csv(news_data, output_folder)
     else:
-        logger.warning("No Google News data available.")
+        logger.warning("No Google News data_fetcher available.")
 
     # 공포 탐욕 지수 조회 및 저장
     fng_response = requests.get("https://api.alternative.me/fng/?limit=7").json()
-    fear_greed_index = fng_response.get('data', [])
+    fear_greed_index = fng_response.get('data_fetcher', [])
     save_fng_to_csv(fear_greed_index, output_folder)
 
     print("OFFICIAL TRUMP 코인 리포트가 정상적으로 완료되었습니다.")

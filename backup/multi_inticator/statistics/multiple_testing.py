@@ -14,7 +14,7 @@ def run_single_case(case):
     symbol= case["symbol"]
     interval= case["interval"]
     config= case["config"]
-    data  = case["data"]
+    data  = case["data_fetcher"]
     init_cap= case.get("initial_capital", 100000)
 
     # 백테스트
@@ -40,7 +40,7 @@ def run_single_case(case):
 def run_multiple_tests_parallel(cases):
     """
     cases: list of dict
-        각 dict = {"symbol":..., "interval":..., "config":..., "data": DataFrame, "initial_capital":...}
+        각 dict = {"symbol":..., "interval":..., "config":..., "data_fetcher": DataFrame, "initial_capital":...}
     """
     total= len(cases)
     results=[]

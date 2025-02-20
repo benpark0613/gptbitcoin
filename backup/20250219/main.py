@@ -44,7 +44,7 @@ def main():
             end_date=config.END_DATE
         )
         if df.empty:
-            print(f"No data fetched for {interval}. Skipping.")
+            print(f"No data_fetcher fetched for {interval}. Skipping.")
             continue
 
         df = df.set_index("open_time").sort_index()
@@ -86,7 +86,7 @@ def main():
         save_summary_to_csv(df_summary, out_csv)
         print(f"\n[INFO] Summary saved to {out_csv}. Rows={len(df_summary)}")
     else:
-        print("[INFO] No summary rows. Possibly no data or no TIMEFRAMES processed.")
+        print("[INFO] No summary rows. Possibly no data_fetcher or no TIMEFRAMES processed.")
 
 
 if __name__ == "__main__":

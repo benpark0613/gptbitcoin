@@ -32,7 +32,7 @@ def main():
     # 사용자 설정
     symbol = "BTCUSDT"
     interval = "15m"
-    csv_dir = "data"
+    csv_dir = "data_fetcher"
     csv_path = os.path.join(csv_dir, f"{symbol}_{interval}.csv")
 
     start_str = "2023-01-01"  # 최적화 대상 기간 시작

@@ -65,7 +65,7 @@ def main():
     # 데이터 로드
     df = load_data()
     if df.empty:
-        st.warning('No trade data available.')
+        st.warning('No trade data_fetcher available.')
         return
 
     # 초기 투자 금액 계산
@@ -172,7 +172,7 @@ def main():
         )
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("Failed to load market data from pyupbit.")
+        st.warning("Failed to load market data_fetcher from pyupbit.")
 
     # 거래 내역 표시
     st.header('Trade History')

@@ -67,7 +67,7 @@ def save_fng_to_csv(fear_greed_index, folder_path, timestamp_prefix=None):
     공포/탐욕 지수 데이터를 CSV로 저장
     """
     if not fear_greed_index:
-        logger.warning("No fear_greed_index data available to save.")
+        logger.warning("No fear_greed_index data_fetcher available to save.")
         return
 
     if not timestamp_prefix:
@@ -601,7 +601,7 @@ def save_long_short_ratio_to_csv(ratio_data, folder_path, timestamp_prefix=None)
     롱/숏 비율 데이터를 CSV로 저장
     """
     if not ratio_data:
-        logger.warning("No long/short ratio data to save.")
+        logger.warning("No long/short ratio data_fetcher to save.")
         return
 
     if not timestamp_prefix:
@@ -646,7 +646,7 @@ def main():
     # save_google_news_data(google_news_data, output_folder, top_n=10, timestamp_prefix=common_timestamp_prefix)
 
     # 4) 공포/탐욕 지수
-    # fear_greed_index = requests.get("https://api.alternative.me/fng/?limit=7").json().get("data", [])
+    # fear_greed_index = requests.get("https://api.alternative.me/fng/?limit=7").json().get("data_fetcher", [])
     # save_fng_to_csv(fear_greed_index, output_folder, timestamp_prefix=common_timestamp_prefix)
 
     # 5) 포지션/오픈오더 조회 후 CSV

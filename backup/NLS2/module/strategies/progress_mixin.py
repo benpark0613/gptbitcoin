@@ -18,7 +18,7 @@ class ProgressMixin(bt.Strategy):
     """
 
     def __init__(self):
-        # __init__ 단계에서는 len(self.data)가 아직 0일 수 있으므로
+        # __init__ 단계에서는 len(self.data_fetcher)가 아직 0일 수 있으므로
         # 여기서는 미리 초기화만 하고, 실제 total_bars는 start()에서 계산합니다.
         self.current_bar = 0
         self.old_percent = 0
@@ -28,7 +28,7 @@ class ProgressMixin(bt.Strategy):
     def start(self):
         """
         Backtrader가 모든 데이터를 로딩한 직후, '전략 시작'할 때 자동 호출됩니다.
-        이 시점에는 len(self.data)가 실제 Bar 개수를 올바르게 반환합니다.
+        이 시점에는 len(self.data_fetcher)가 실제 Bar 개수를 올바르게 반환합니다.
         """
         self.total_bars = len(self.data)
         # 혹시나 total_bars가 0일 경우의 방어 코드

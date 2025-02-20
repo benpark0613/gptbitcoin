@@ -128,7 +128,7 @@ def main():
     이 모듈을 단독 실행했을 때 동작하는 간단한 테스트 함수.
     """
     # DATA 폴더 정리
-    data_dir = os.path.join(os.path.dirname(__file__), "data")
+    data_dir = os.path.join(os.path.dirname(__file__), "data_fetcher")
     clean_data_folder(data_dir)
 
     symbol   = "BTCUSDT"
@@ -146,7 +146,7 @@ def main():
     if not df.empty:
         print(df.head())
     else:
-        print("No data fetched.")
+        print("No data_fetcher fetched.")
 
 if __name__ == "__main__":
     main()

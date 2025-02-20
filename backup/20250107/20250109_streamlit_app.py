@@ -49,7 +49,7 @@ def main():
     df = load_data()
 
     if df.empty:
-        st.warning("No trade data available.")
+        st.warning("No trade data_fetcher available.")
         return
 
     # 초기 투자 금액 계산

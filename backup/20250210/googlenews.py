@@ -128,7 +128,7 @@ if __name__ == "__main__":
     google_news_data = scrape_news([
         "Bitcoin", "Bitcoin market trends", "Bitcoin volatility", "Bitcoin on-chain activity",
         "Bitcoin institutional adoption", "SEC Bitcoin ETF decision", "Bitcoin regulation",
-        "Bitcoin mining difficulty", "Bitcoin transaction fees", "US inflation CPI data",
+        "Bitcoin mining difficulty", "Bitcoin transaction fees", "US inflation CPI data_fetcher",
         "Federal Reserve interest rates", "Crypto market sentiment", "Bitcoin options and futures",
         "Bitcoin ETF flows", "Stablecoins impact on Bitcoin", "DeFi and Bitcoin correlation",
         "Geopolitical impact on Bitcoin", "Ethereum vs Bitcoin dominance"
