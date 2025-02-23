@@ -1,4 +1,4 @@
-# strategies/strategy.py
+# strategies/strategies.py
 
 import pandas as pd
 from backup.multi_inticator.strategies.signal_generator import SignalGenerator

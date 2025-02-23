@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from binance.client import Client
 from dotenv import load_dotenv
 
-# config.py 에 있는 START_DATE, END_DATE 임포트 (프로젝트 구조에 맞게 경로 조정)
+# global_settings.py 에 있는 START_DATE, END_DATE 임포트 (프로젝트 구조에 맞게 경로 조정)
 from settings.config import START_DATE, END_DATE
 
 # 별도 유틸 모듈로 분리된 폴더 정리 함수
