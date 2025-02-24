@@ -1,5 +1,6 @@
 # gptbitcoin/indicators/indicators.py
 # 구글 스타일, 최소한의 한글 주석
+from decimal import Decimal, ROUND_HALF_UP
 
 import pandas as pd
 import pandas_ta as ta
@@ -123,19 +124,28 @@ def calc_all_indicators(df: pd.DataFrame, cfg: dict = None) -> pd.DataFrame:
 
     # 3) OBV
     if "OBV" in cfg:
-        # obv 계산
-        if "obv" not in df.columns:
-            df["obv"] = calc_obv_series(df["close"], df["volume"])
+        # 1) 원본 OBV를 obv_raw 컬럼에 계산 (반올림 전 값)
+        if "obv_raw" not in df.columns:
+            df["obv_raw"] = calc_obv_series(df["close"], df["volume"])
 
-        # obv_sma_n: n = short_periods + long_periods
+        # 2) obv_raw를 반올림하여 obv 컬럼에 저장
+        #    ("OBV 구해서 반올림해서 저장" 요구사항)
+        df["obv"] = df["obv_raw"].apply(round_abs_decimal)
+
+        # 3) obv_sma_* 계산할 때는
+        #    "반올림하지 않은 원본 obv_raw"로 rolling.mean() 수행
         sp_list = cfg["OBV"].get("short_periods", [])
         lp_list = cfg["OBV"].get("long_periods", [])
-        all_obv_periods = sp_list + lp_list  # [5,10,30,50,100]
+        all_obv_periods = sp_list + lp_list  # 예: [5,10,30,50,100]
+
         for p in all_obv_periods:
             col_name = f"obv_sma_{p}"
-            s = df["obv"].rolling(window=p, min_periods=p).mean()
-            # 소수점 첫째자리에서 반올림 => 정수
-            df[col_name] = s.round(0)
+
+            # ★ 원본(obv_raw) 기반으로 SMA 계산
+            s = df["obv_raw"].rolling(window=p, min_periods=p).mean()
+
+            # 필요하다면 SMA도 반올림해 저장할 수 있음
+            df[col_name] = s.apply(round_abs_decimal)
 
     # 4) Filter
     if "Filter" in cfg:
@@ -159,3 +169,33 @@ def calc_all_indicators(df: pd.DataFrame, cfg: dict = None) -> pd.DataFrame:
             df[f"ch_max_{w}"] = rolling_max_series(df["close"], w).round(2)
 
     return df
+
+
+def round_abs_decimal(x):
+    """
+    1) NaN/None이면 그냥 None 반환
+    2) 음수면 절댓값을 취함
+    3) 소수점 첫째 자리(= 정수 단위)에서 반올림(ROUND_HALF_UP)
+    4) 음수였으면 다시 부호를 씌움
+    """
+    if x is None or pd.isna(x):
+        return None
+
+    sign = -1 if x < 0 else 1
+    d = Decimal(str(abs(x)))
+    d_rounded = d.quantize(Decimal('1'), rounding=ROUND_HALF_UP)  # 일의 자리에서 반올림
+    return float(sign * d_rounded)
+
+
+def calc_obv_series(close_s: pd.Series, vol_s: pd.Series) -> pd.Series:
+    """
+    예시: 기본 OBV 계산
+    (실제 구현은 기존 코드와 동일)
+    """
+    obv_vals = [0] * len(close_s)
+    for i in range(1, len(close_s)):
+        if close_s.iloc[i] > close_s.iloc[i - 1]:
+            obv_vals[i] = obv_vals[i - 1] + vol_s.iloc[i]
+        else:
+            obv_vals[i] = obv_vals[i - 1] - vol_s.iloc[i]
+    return pd.Series(obv_vals, index=close_s.index)

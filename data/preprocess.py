@@ -1,79 +1,52 @@
 # gptbitcoin/data/preprocess.py
 # 구글 스타일, 최소한의 한글 주석
+# 이 모듈은 원본데이터(OHLCV) 전처리와 보조지표 계산만 담당한다.
+# DB 관련 로직은 모두 update_data.py 등으로 분리. 여기서는 NaN이 발생하면 즉시 예외를 발생시킨다.
 
 import os
+import sys
 import pandas as pd
-from typing import Dict, Any
-from config.config import INDICATOR_CONFIG, WARMUP_BARS, START_DATE, END_DATE, SYMBOL
+from typing import Optional
+
 from indicators.indicators import calc_all_indicators
-from data.fetch_data import fetch_ohlcv_csv
 
-def preprocess_csv(
-    csv_in_path: str,
-    csv_out_path: str,
-    dropna: bool = False
-) -> None:
-    """원본 CSV에 지표를 추가하고 저장한다."""
-    if not os.path.isfile(csv_in_path):
-        raise FileNotFoundError(f"File not found: {csv_in_path}")
+def preprocess_ohlcv_data(df: pd.DataFrame, dropna: bool = False) -> pd.DataFrame:
+    """
+    원본데이터(OHLCV)에 대해:
+      1) 숫자 형 변환
+      2) OHLC, volume 중 하나라도 NaN이면 예외 발생 후 종료
+      3) 보조지표(calc_all_indicators) 계산
+      4) (옵션) dropna=True면, 지표 계산 후 발생한 NaN(지표 컬럼)도 제거
 
-    df = pd.read_csv(csv_in_path)
-    req_cols = ["datetime_utc", "open", "high", "low", "close", "volume"]
-    for c in req_cols:
-        if c not in df.columns:
-            raise ValueError(f"Missing column: {c}")
+    Args:
+        df (pd.DataFrame): 최소한 'open','high','low','close','volume' 열을 포함해야 함
+        dropna (bool): True 시, 보조지표 계산 후 NaN 존재 행을 제거
 
-    df["datetime_utc"] = pd.to_datetime(
-        df["datetime_utc"],
-        format="%Y-%m-%d %H:%M:%S",
-        errors="coerce"
-    )
-    if df["datetime_utc"].isnull().any():
-        raise ValueError("Invalid or unrecognized datetime format in 'datetime_utc'")
-
-    df.sort_values("datetime_utc", inplace=True)
-    df.reset_index(drop=True, inplace=True)
-
-    for i, row in df.iterrows():
-        if any([
-            row["open"] <= 0,
-            row["high"] <= 0,
-            row["low"] <= 0,
-            row["close"] <= 0,
-            row["volume"] < 0
-        ]):
-            raise ValueError(f"Non-positive values at row {i}")
-
+    Returns:
+        pd.DataFrame: 보조지표가 추가된 전처리 완료 DataFrame
+    """
     if df.empty:
-        raise ValueError("No valid data")
+        print("[WARN] preprocess_ohlcv_data: 입력 df가 비어 있습니다.")
+        return df
 
-    df = calc_all_indicators(df, INDICATOR_CONFIG)
+    # 1) 숫자 형 변환
+    for col in ["open", "high", "low", "close", "volume"]:
+        if col not in df.columns:
+            raise ValueError(f"[ERROR] 필수 컬럼 '{col}'이 DataFrame에 없습니다.")
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # 2) OHLC, volume 중 하나라도 NaN이면 예외 발생
+    if df[["open", "high", "low", "close", "volume"]].isna().any().any():
+        raise ValueError("[ERROR] OHLC 또는 volume 컬럼에서 NaN이 발견되었습니다. "
+                         "데이터 무결성 오류로 프로세스를 중단합니다.")
+
+    # 3) 보조지표 계산
+    df = calc_all_indicators(df)
+
+    # 4) dropna=True인 경우, 지표 계산 후 지표 컬럼에서 발생한 NaN을 제거
+    #    (지표 파라미터에 따라 초반 기간이 NaN이 될 수 있음)
     if dropna:
         df.dropna(inplace=True)
+        df.reset_index(drop=True, inplace=True)
 
-    df["datetime_utc"] = df["datetime_utc"].dt.strftime("%Y-%m-%d %H:%M:%S")
-    df.to_csv(csv_out_path, index=False)
-    print(f"[INFO] Preprocessed CSV saved -> {csv_out_path}")
-
-def test_fetch_and_preprocess(
-    symbol: str = SYMBOL,
-    interval: str = "1d",
-    start_str: str = START_DATE,
-    end_str: str = END_DATE,
-    warmup_bars: int = WARMUP_BARS
-) -> None:
-    """fetch_data.py를 호출하여 origin CSV를 만들고, 보조지표를 추가 후 저장한다."""
-    csv_in = fetch_ohlcv_csv(
-        symbol=symbol,
-        interval=interval,
-        start_str=start_str,
-        end_str=end_str,
-        warmup_bars=warmup_bars
-    )
-    csv_out = csv_in.replace(".csv", "_with_indicators.csv")
-    preprocess_csv(csv_in, csv_out, dropna=False)
-    print(f"[TEST] Completed fetch + indicator preprocess: {csv_out}")
-
-if __name__ == "__main__":
-    # 예시 실행
-    test_fetch_and_preprocess()
+    return df
