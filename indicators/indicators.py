@@ -1,64 +1,161 @@
 # gptbitcoin/indicators/indicators.py
+# 구글 스타일, 최소한의 한글 주석
 
 import pandas as pd
+import pandas_ta as ta
+from config.config import INDICATOR_CONFIG
+
 
 def calc_sma_series(series: pd.Series, period: int) -> pd.Series:
+    """
+    단순 이동평균. min_periods=period로 설정하여
+    초기 period 일 이전에는 NaN 처리.
+    """
     return series.rolling(window=period, min_periods=period).mean()
 
-def calc_rsi_series(series: pd.Series, period: int) -> pd.Series:
-    delta = series.diff(1)
-    gain = delta.where(delta > 0, 0).rolling(window=period, min_periods=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period, min_periods=period).mean()
-    loss = loss.replace({0.0: 1e-10})
-    rs = gain / loss
-    return 100.0 - (100.0 / (1.0 + rs))
+
+def calc_rsi_series(close_s: pd.Series, period: int) -> pd.Series:
+    """
+    재귀 평활(Wilder) 방식으로 RSI 계산.
+    (추가 SMA 평활은 하지 않는다)
+    Args:
+        close_s: 종가 시리즈
+        period: RSI 기간 (예: 14)
+    Returns:
+        pd.Series: RSI 결과(소수점 둘째 자리)
+    """
+    diffs = close_s.diff()
+    gains = diffs.where(diffs > 0, 0.0)
+    losses = (-diffs).where(diffs < 0, 0.0)
+    rsi_vals = [None] * len(close_s)
+
+    if len(close_s) < period:
+        return pd.Series(rsi_vals, index=close_s.index)
+
+    # 초기(14) 구간
+    avg_gain = gains.iloc[1:period + 1].mean()
+    avg_loss = losses.iloc[1:period + 1].mean()
+    if avg_loss == 0:
+        rsi_vals[period] = 100.0
+    else:
+        rs = avg_gain / avg_loss
+        rsi_vals[period] = 100.0 - (100.0 / (1.0 + rs))
+
+    # 이후 재귀식으로 평활
+    for i in range(period + 1, len(close_s)):
+        cur_gain = gains.iloc[i] if gains.iloc[i] > 0 else 0.0
+        cur_loss = losses.iloc[i] if losses.iloc[i] > 0 else 0.0
+
+        avg_gain = (avg_gain * (period - 1) + cur_gain) / period
+        avg_loss = (avg_loss * (period - 1) + cur_loss) / period
+
+        if avg_loss == 0:
+            rsi_vals[i] = 100.0
+        else:
+            rs = avg_gain / avg_loss
+            rsi_vals[i] = 100.0 - (100.0 / (1.0 + rs))
+
+    return pd.Series(rsi_vals, index=close_s.index).round(2)
+
 
 def calc_obv_series(close_s: pd.Series, vol_s: pd.Series) -> pd.Series:
-    c_shift = close_s.shift(1)
-    sign_diff = (close_s - c_shift).apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
-    return (sign_diff * vol_s).fillna(0).cumsum()
+    """
+    OBV 계산.
+    첫 봉 OBV=0, 종가가 전일 대비 상승이면 OBV += volume, 하락이면 OBV -= volume
+    """
+    obv_vals = [0] * len(close_s)
+    for i in range(1, len(close_s)):
+        if close_s.iloc[i] > close_s.iloc[i - 1]:
+            obv_vals[i] = obv_vals[i - 1] + vol_s.iloc[i]
+        else:
+            obv_vals[i] = obv_vals[i - 1] - vol_s.iloc[i]
+    return pd.Series(obv_vals, index=close_s.index)
+
 
 def rolling_min_series(series: pd.Series, window: int) -> pd.Series:
+    """최소값을 window 길이만큼 만족해야 계산."""
     return series.rolling(window=window, min_periods=window).min()
 
+
 def rolling_max_series(series: pd.Series, window: int) -> pd.Series:
+    """최대값을 window 길이만큼 만족해야 계산."""
     return series.rolling(window=window, min_periods=window).max()
 
-def calc_all_indicators(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+
+def calc_all_indicators(df: pd.DataFrame, cfg: dict = None) -> pd.DataFrame:
+    """
+    config.config의 INDICATOR_CONFIG를 사용하여
+    다음 컬럼들을 계산/추가한다.
+
+    - MA: ma_5, ma_10, ma_20, ma_50, ma_100, ma_200
+    - RSI: rsi_14, rsi_21, rsi_30
+    - Filter: filter_min_10, filter_max_10, filter_min_20, filter_max_20
+    - Support_Resistance: sr_min_10, sr_max_10, sr_min_20, sr_max_20
+    - Channel_Breakout: ch_min_14, ch_max_14, ch_min_20, ch_max_20
+    - OBV: obv
+      + obv_sma_5, obv_sma_10, obv_sma_30, obv_sma_50, obv_sma_100
+    """
+    # cfg 미지정시 기본 INDICATOR_CONFIG 사용
+    if cfg is None:
+        cfg = INDICATOR_CONFIG
+
+    # 필수 컬럼 확인
     if "close" not in df.columns or "volume" not in df.columns:
-        raise ValueError("close, volume columns required")
+        raise ValueError("데이터프레임에 'close', 'volume'가 필요합니다.")
 
+    # 1) MA
     if "MA" in cfg:
-        for sp in cfg["MA"].get("short_periods", []):
-            df[f"ma_{sp}"] = calc_sma_series(df["close"], sp)
-        for lp in cfg["MA"].get("long_periods", []):
-            df[f"ma_{lp}"] = calc_sma_series(df["close"], lp)
+        sp_list = cfg["MA"].get("short_periods", [])
+        lp_list = cfg["MA"].get("long_periods", [])
+        # ma_5, ma_10, ma_20
+        for sp in sp_list:
+            df[f"ma_{sp}"] = calc_sma_series(df["close"], sp).round(2)
+        # ma_50, ma_100, ma_200
+        for lp in lp_list:
+            df[f"ma_{lp}"] = calc_sma_series(df["close"], lp).round(2)
 
+    # 2) RSI
     if "RSI" in cfg:
-        for length in cfg["RSI"].get("lengths", []):
+        length_list = cfg["RSI"].get("lengths", [])
+        # rsi_14, rsi_21, rsi_30
+        for length in length_list:
             df[f"rsi_{length}"] = calc_rsi_series(df["close"], length)
 
-    if "Filter" in cfg:
-        for w in cfg["Filter"].get("windows", []):
-            df[f"filter_min_{w}"] = rolling_min_series(df["close"], w)
-            df[f"filter_max_{w}"] = rolling_max_series(df["close"], w)
-
-    if "Support_Resistance" in cfg:
-        for w in cfg["Support_Resistance"].get("windows", []):
-            df[f"sr_min_{w}"] = rolling_min_series(df["close"], w)
-            df[f"sr_max_{w}"] = rolling_max_series(df["close"], w)
-
-    if "Channel_Breakout" in cfg:
-        for w in cfg["Channel_Breakout"].get("windows", []):
-            df[f"ch_min_{w}"] = rolling_min_series(df["close"], w)
-            df[f"ch_max_{w}"] = rolling_max_series(df["close"], w)
-
+    # 3) OBV
     if "OBV" in cfg:
+        # obv 계산
         if "obv" not in df.columns:
             df["obv"] = calc_obv_series(df["close"], df["volume"])
-        for sp in cfg["OBV"].get("short_periods", []):
-            df[f"obv_sma_{sp}"] = calc_sma_series(df["obv"], sp)
-        for lp in cfg["OBV"].get("long_periods", []):
-            df[f"obv_sma_{lp}"] = calc_sma_series(df["obv"], lp)
+
+        # obv_sma_n: n = short_periods + long_periods
+        sp_list = cfg["OBV"].get("short_periods", [])
+        lp_list = cfg["OBV"].get("long_periods", [])
+        all_obv_periods = sp_list + lp_list  # [5,10,30,50,100]
+        for p in all_obv_periods:
+            col_name = f"obv_sma_{p}"
+            s = df["obv"].rolling(window=p, min_periods=p).mean()
+            # 소수점 첫째자리에서 반올림 => 정수
+            df[col_name] = s.round(0)
+
+    # 4) Filter
+    if "Filter" in cfg:
+        windows = cfg["Filter"].get("windows", [])
+        for w in windows:
+            df[f"filter_min_{w}"] = rolling_min_series(df["close"], w).round(2)
+            df[f"filter_max_{w}"] = rolling_max_series(df["close"], w).round(2)
+
+    # 5) Support_Resistance
+    if "Support_Resistance" in cfg:
+        sr_windows = cfg["Support_Resistance"].get("windows", [])
+        for w in sr_windows:
+            df[f"sr_min_{w}"] = rolling_min_series(df["close"], w).round(2)
+            df[f"sr_max_{w}"] = rolling_max_series(df["close"], w).round(2)
+
+    # 6) Channel_Breakout
+    if "Channel_Breakout" in cfg:
+        ch_windows = cfg["Channel_Breakout"].get("windows", [])
+        for w in ch_windows:
+            df[f"ch_min_{w}"] = rolling_min_series(df["close"], w).round(2)
+            df[f"ch_max_{w}"] = rolling_max_series(df["close"], w).round(2)
 
     return df

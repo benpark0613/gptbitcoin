@@ -19,8 +19,8 @@ ALLOW_SHORT = True
 COMMISSION_RATE = 0.0004
 SLIPPAGE_RATE = 0.0002
 
-START_DATE = "2024-01-01"
-END_DATE = "2024-12-31"
+START_DATE = "2020-01-01"
+END_DATE = "2020-12-31"
 
 INDICATOR_COMBO_SIZES = [1,2,3]
 
@@ -35,6 +35,10 @@ INDICATOR_CONFIG = {
         "overbought_values": [70, 80],
         "oversold_values":   [30, 20],
     },
+    "OBV": {
+        "short_periods": [5, 10],
+        "long_periods": [30, 50, 100],
+    },
     "Filter": {
         "windows": [10, 20],
         "x_values": [0.05, 0.1],
@@ -47,10 +51,6 @@ INDICATOR_CONFIG = {
     "Channel_Breakout": {
         "windows": [14, 20],
         "c_values": [0.1, 0.2, 0.3],
-    },
-    "OBV": {
-        "short_periods": [5, 10],
-        "long_periods":  [30, 50, 100],
     },
 }
 
