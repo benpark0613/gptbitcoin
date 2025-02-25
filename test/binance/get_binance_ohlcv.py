@@ -93,8 +93,8 @@ def main(
 if __name__ == "__main__":
     main(
         symbol="BTCUSDT",
-        intervals=["1h"],
-        start_date="2024-01-01",
-        end_date="2024-12-31",
+        intervals=["1d"],
+        start_date="2023-08-15",
+        end_date="2023-08-20",
         save_folder="test_result"
     )

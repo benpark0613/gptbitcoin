@@ -10,21 +10,16 @@
 # db_utils.py에서 테이블 생성/저장 로직, preprocess.py에서 지표 계산 로직을 관리한다.
 # 여기서는 'update_data_db' 함수 하나로 전 과정을 처리한다.
 
-import sys
-import os
-import math
-import pytz
 from datetime import datetime
 from typing import List
 
 import pandas as pd
+import pytz
 
 # 바이낸스 klines(OHLCV) 다운로드
 from data.fetch_data import fetch_ohlcv
-
 # 전처리 + 보조지표 계산 (NaN 발견 시 예외, dropna 인자)
 from data.preprocess import preprocess_ohlcv_data
-
 # DB 유틸 (테이블 생성 + insert)
 from utils.db_utils import (
     get_connection,
@@ -43,7 +38,6 @@ def klines_to_dataframe(klines: list) -> pd.DataFrame:
     """
     df_list = []
     for row in klines:
-        # row: [open_time, open, high, low, close, volume, ...]
         open_time_ms = int(row[0])
         dt_utc = datetime.utcfromtimestamp(open_time_ms / 1000.0).replace(tzinfo=UTC)
         dt_str = dt_utc.strftime("%Y-%m-%d %H:%M:%S")
@@ -52,7 +46,8 @@ def klines_to_dataframe(klines: list) -> pd.DataFrame:
         h_val = float(row[2])
         l_val = float(row[3])
         c_val = float(row[4])
-        vol_val = float(row[5])
+        # volume을 소수점 첫째자리에서 반올림(=정수 반올림)
+        vol_val = round(float(row[5]))
 
         df_list.append([dt_str, o_val, h_val, l_val, c_val, vol_val])
 
