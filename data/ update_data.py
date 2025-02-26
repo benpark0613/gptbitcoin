@@ -3,24 +3,24 @@
 #
 # 이 모듈은 다음 과정을 수행한다:
 #  1) fetch_ohlcv(...)로 바이낸스 선물 OHLCV 데이터를 [start_str ~ end_str] 구간, 여러 interval에 대해 가져옴
-#  2) 받아온 데이터를 ohlcv 테이블에 저장 (INSERT OR REPLACE)
-#  3) preprocess_ohlcv_data(...)로 보조지표 전부 계산
-#  4) ohlcv_indicators 테이블에 calc_all_indicators에서 생성된 컬럼들(예: ma_5, rsi_14, obv...)을 저장
+#  2) (요구사항) 해당 intervals의 [BOUNDARY_DATE 이후] 데이터를 전부 삭제(ohlcv, ohlcv_indicators)한 뒤
+#  3) 받아온 [start_str ~ end_str] 데이터를 ohlcv 테이블에 (INSERT OR REPLACE)
+#  4) preprocess_ohlcv_data(...)로 보조지표 계산
+#  5) ohlcv_indicators 테이블에 calc_all_indicators에서 생성된 컬럼들(예: ma_5, rsi_14, obv...)을 저장
 #
 # db_utils.py에서 테이블 생성/저장 로직, preprocess.py에서 지표 계산 로직을 관리한다.
-# 여기서는 'update_data_db' 함수 하나로 전 과정을 처리한다.
+# 여기서는 'update_data_db' 함수 하나로 전 과정을 처리하되,
+# 'intervals'마다 BOUNDARY_DATE 이후 데이터를 먼저 DELETE 처리한 후 새로 INSERT.
 
+import os
 from datetime import datetime
 from typing import List
 
 import pandas as pd
 import pytz
 
-# 바이낸스 klines(OHLCV) 다운로드
 from data.fetch_data import fetch_ohlcv
-# 전처리 + 보조지표 계산 (NaN 발견 시 예외, dropna 인자)
 from data.preprocess import preprocess_ohlcv_data
-# DB 유틸 (테이블 생성 + insert)
 from utils.db_utils import (
     get_connection,
     create_ohlcv_table_if_not_exists,
@@ -30,6 +30,33 @@ from utils.db_utils import (
 )
 
 UTC = pytz.utc
+
+BOUNDARY_DATE_STR = "2025-01-01"  # 예: 2025-01-01 이후는 삭제
+
+def _delete_data_after_boundary(conn, symbol: str, interval: str) -> None:
+    """
+    ohlcv, ohlcv_indicators 테이블에서
+    'interval'='interval' AND 'symbol'='symbol' 이며
+    datetime_utc >= BOUNDARY_DATE_STR 인 행 삭제
+    """
+    boundary_dt = BOUNDARY_DATE_STR + " 00:00:00"
+
+    # ohlcv
+    sql_ohlcv = """
+    DELETE FROM ohlcv
+     WHERE symbol=? AND interval=?
+       AND datetime_utc >= ?
+    """
+    conn.execute(sql_ohlcv, (symbol, interval, boundary_dt))
+
+    # indicators
+    sql_inds = """
+    DELETE FROM ohlcv_indicators
+     WHERE symbol=? AND interval=?
+       AND datetime_utc >= ?
+    """
+    conn.execute(sql_inds, (symbol, interval, boundary_dt))
+    conn.commit()
 
 def klines_to_dataframe(klines: list) -> pd.DataFrame:
     """
@@ -78,28 +105,18 @@ def update_data_db(
     dropna_indicators: bool = False
 ) -> None:
     """
-    1) fetch_ohlcv(...)로 [start_str ~ end_str] 구간, 각 interval의 klines 가져옴
-    2) klines -> df_raw -> ohlcv 테이블에 저장
-    3) preprocess_ohlcv_data(df_raw)로 보조지표 계산( calc_all_indicators )
-    4) ohlcv_indicators 테이블에 삽입 (insert_indicators):
-       - db_utils.py의 create_indicators_table_if_not_exists 내
-         모든 지표 컬럼(MA, RSI, OBV 등)을 사전 정의해 둠
-
-    Args:
-      symbol (str): 예) "BTCUSDT"
-      intervals (List[str]): ["1d","5m"] 등
-      start_str (str): 예) "2019-01-01"
-      end_str (str): 예) "2019-12-31"
-      dropna_indicators (bool): 지표 계산 후 NaN이 생긴 행 제거할지 여부
+    1) intervals 별로, DB에 있는 BOUNDARY_DATE 이후 데이터(o,l,h,c,v,지표) 전부 DELETE
+    2) [start_str ~ end_str] 구간 klines fetch → df_raw
+    3) df_raw -> ohlcv 테이블 INSERT OR REPLACE
+    4) preprocess_ohlcv_data(df_raw) 지표 계산
+    5) ohlcv_indicators 테이블에 해당 지표 삽입
     """
     print("[INFO] update_data_db start")
     print(f"  symbol={symbol}, intervals={intervals}, start={start_str}, end={end_str}")
     print(f"  dropna_indicators={dropna_indicators}")
+    print(f"  BOUNDARY_DATE_STR={BOUNDARY_DATE_STR} 이후 데이터는 삭제합니다.")
 
     # 지표 테이블에 들어갈 컬럼(예: ma_5, ma_10, rsi_14, obv 등)
-    # db_utils.py의 create_indicators_table_if_not_exists 함수가
-    # 동일한 지표 컬럼들을 이미 정의해둠.
-    # insert_indicators 호출 시 필요한 extra_cols
     all_indicator_cols = [
         # MA
         "ma_5","ma_10","ma_20","ma_50","ma_100","ma_200",
@@ -116,19 +133,25 @@ def update_data_db(
     ]
 
     for interval in intervals:
-        print(f"[INFO] Fetching interval='{interval}' from {start_str} to {end_str}")
+        print(f"[INFO] Interval='{interval}': 1) Delete BOUNDARY_DATE 이후 data from DB.")
+        conn = get_connection()
+        try:
+            _delete_data_after_boundary(conn, symbol, interval)
+        finally:
+            conn.close()
+
+        print(f"[INFO] Interval='{interval}': 2) Fetch klines: {start_str}~{end_str}")
         klines = fetch_ohlcv(symbol, interval, start_str, end_str)
         if not klines:
             print(f"[WARN] No klines returned for '{interval}'. Skip.")
             continue
 
-        # klines -> df_raw
         df_raw = klines_to_dataframe(klines)
         if df_raw.empty:
             print(f"[WARN] df_raw empty for '{interval}'. Skip.")
             continue
 
-        # 1) DB에 ohlcv 저장
+        print(f"[INFO] Interval='{interval}': Insert to ohlcv table.")
         conn = get_connection()
         try:
             create_ohlcv_table_if_not_exists(conn)
@@ -137,19 +160,16 @@ def update_data_db(
         finally:
             conn.close()
 
-        # 2) 지표 계산
-        #    OHLC 중 NaN 있으면 예외 발생, dropna_indicators=True면 지표 NaN도 제거
+        print(f"[INFO] Interval='{interval}': Calculate indicators.")
         df_ind = preprocess_ohlcv_data(df_raw, dropna=dropna_indicators)
         if df_ind.empty:
-            print(f"[WARN] After indicator calc, DF empty for '{interval}'. No indicator insertion.")
+            print(f"[WARN] After indicator calc, DF empty for '{interval}'. Skip inserting indicators.")
             continue
 
-        # 3) DB(ohlcv_indicators)에 저장
+        print(f"[INFO] Interval='{interval}': Insert to ohlcv_indicators.")
         conn = get_connection()
         try:
-            # 테이블 사전 생성(모든 지표 컬럼 포함)
             create_indicators_table_if_not_exists(conn)
-            # insert_indicators => extra_cols=all_indicator_cols
             insert_indicators(conn, symbol, interval, df_ind, all_indicator_cols)
         finally:
             conn.close()
@@ -157,13 +177,34 @@ def update_data_db(
     print("[INFO] update_data_db complete.")
 
 
+def _delete_data_after_boundary(conn, symbol: str, interval: str) -> None:
+    """
+    BOUNDARY_DATE 이후의 데이터(ohlcv, ohlcv_indicators) 전부 삭제
+    """
+    boundary_dt_str = BOUNDARY_DATE_STR + " 00:00:00"
+
+    sql_1 = """
+    DELETE FROM ohlcv
+     WHERE symbol=? AND interval=?
+       AND datetime_utc >= ?
+    """
+    conn.execute(sql_1, (symbol, interval, boundary_dt_str))
+
+    sql_2 = """
+    DELETE FROM ohlcv_indicators
+     WHERE symbol=? AND interval=?
+       AND datetime_utc >= ?
+    """
+    conn.execute(sql_2, (symbol, interval, boundary_dt_str))
+    conn.commit()
+
 if __name__ == "__main__":
     """
     예시 실행:
       python update_data.py
     """
     SYMBOL = "BTCUSDT"
-    INTERVALS = ["1d"]
+    INTERVALS = ["1d"]  # 사용자가 원하는 interval
     START_STR = "2019-01-01"
     END_STR   = "2024-12-31"
     DROPNA_INDICATORS = False
@@ -171,6 +212,7 @@ if __name__ == "__main__":
     print("[INFO] Running update_data_db with local vars:")
     print(f"  SYMBOL={SYMBOL}, INTERVALS={INTERVALS}, START={START_STR}, END={END_STR}")
     print(f"  dropna_indicators={DROPNA_INDICATORS}")
+    print(f"  (Delete all 1d data >= {BOUNDARY_DATE_STR})")
 
     update_data_db(
         symbol=SYMBOL,

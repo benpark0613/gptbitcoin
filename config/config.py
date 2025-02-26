@@ -3,7 +3,16 @@
 # SQLite DB를 사용하기 위한 DB_PATH 추가
 
 import os
+from datetime import datetime
+
 from dotenv import load_dotenv
+
+
+def today():
+    # 현재 날짜를 YYYY-MM-DD 형식으로 a에 저장 후 출력
+    now = datetime.now()
+    a = now.strftime("%Y-%m-%d")
+    return a
 
 # 환경 변수 로드
 load_dotenv()
@@ -21,11 +30,13 @@ SLIPPAGE_RATE = 0.0002
 
 # 거래소 오픈 날짜
 EXCHANGE_OPEN_DATE = "2019-09-08"
+# main.py 에서 BOUNDARY_DATE 이전 데이터는 절대 수정하지 않는다.
 BOUNDARY_DATE = "2025-01-01"
 
 # 테스트 기본 구간
-START_DATE = "2019-01-01"
-END_DATE = "2019-12-31"
+START_DATE = "2024-01-01"
+# END_DATE = "2024-12-31"
+END_DATE = today()
 
 INDICATOR_COMBO_SIZES = [1]
 
