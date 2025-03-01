@@ -5,8 +5,8 @@
 # 2) fix_ohlcv_exceptions(...)에서 특정 날짜/interval의 볼륨을 하드코딩 교정.
 
 from datetime import datetime, timedelta
-
 import pytz
+
 from binance.client import Client
 
 from config.config import (
@@ -93,6 +93,7 @@ def klines_to_dataframe(klines: list) -> 'pd.DataFrame':
     columns = ["datetime_utc","open","high","low","close","volume"].
     여기서는 단순 변환만 하고, 예외 교정은 별도 함수에서 처리한다.
     """
+    import pandas as pd
 
     df_list = []
     for row in klines:
@@ -123,6 +124,7 @@ def fix_ohlcv_exceptions(df: 'pd.DataFrame', interval: str) -> 'pd.DataFrame':
     하드코딩된 볼륨값 등 예외처리를 수행하는 함수.
     여러 케이스를 대비해 딕셔너리나 조건문으로 처리 가능.
     """
+    import pandas as pd
 
     # 예시: (날짜, interval) => 강제 볼륨
     # 필요한 만큼 추가 가능

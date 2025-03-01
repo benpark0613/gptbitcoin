@@ -65,6 +65,7 @@ def run_is(
 
         # JSON 직렬화 (IS 거래 기록은 저장하지 않음)
         combo_plus_short = {
+            "timeframe": timeframe,
             "allow_short": ALLOW_SHORT,
             "indicators": combo_list
         }

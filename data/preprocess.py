@@ -1,36 +1,29 @@
 # gptbitcoin/data/preprocess.py
 # 구글 스타일, 최소한의 한글 주석
-# 원본데이터(OHLCV)에 대한 전처리(숫자 변환, 결측 검사)와 보조지표 계산 담당.
-# OBV 누적 계산을 이어서 처리할 수 있도록 incremental 함수 추가.
+# OBV + OBV_SMA(롤링) 등에 대해, offset 적용 후 최종 결과가 반영되도록 수정.
 
 import pandas as pd
 from indicators.indicators import calc_all_indicators
 
-
 def preprocess_ohlcv_data(df: pd.DataFrame, dropna: bool = False) -> pd.DataFrame:
     """
-    원본데이터(OHLCV) 전체에 대해:
-      1) 숫자 변환
-      2) OHLC, volume 결측 검사
-      3) calc_all_indicators(df)로 보조지표 계산
-      4) dropna=True면 지표 NaN 행 제거
-
-    일반적인 전체 재계산용. OBV는 첫 봉=0으로 시작.
+    전체 구간의 OHLCV에 대해 숫자 변환, 결측 검사 후
+    calc_all_indicators로 지표 계산.
+    dropna=True면 지표 NaN 행을 제거한다.
     """
     if df.empty:
-        print("[WARN] preprocess_ohlcv_data: 입력 df가 비어 있음.")
+        print("[WARN] preprocess_ohlcv_data: df가 비어 있음.")
         return df
 
     for col in ["open", "high", "low", "close", "volume"]:
         if col not in df.columns:
-            raise ValueError(f"[ERROR] 필수 컬럼 '{col}' 누락.")
+            raise ValueError(f"[ERROR] '{col}' 누락")
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     if df[["open","high","low","close","volume"]].isna().any().any():
-        raise ValueError("[ERROR] OHLC 또는 volume 컬럼에 NaN 존재. 데이터 무결성 오류.")
+        raise ValueError("[ERROR] OHLC/volume 중 NaN 존재")
 
     df = calc_all_indicators(df)
-
     if dropna:
         df.dropna(inplace=True)
         df.reset_index(drop=True, inplace=True)
@@ -40,82 +33,102 @@ def preprocess_ohlcv_data(df: pd.DataFrame, dropna: bool = False) -> pd.DataFram
 
 def preprocess_incremental_ohlcv_data(
     df_new: pd.DataFrame,
-    old_obv_final: float,
-    compare_prev_close: float,
+    df_old_tail: pd.DataFrame,
     dropna_indicators: bool = False
 ) -> pd.DataFrame:
     """
-    과거 구간(예: 2024-12-31)까지 DB에 저장된 OBV 누적값(old_obv_final)을 이어서,
-    신규 구간 df_new에 대해 OBV 누적 + MA/RSI 등 지표를 계산한다.
-
-    Args:
-        df_new (pd.DataFrame):
-            신규 구간의 OHLCV. 최소 'datetime_utc','open','high','low','close','volume' 필요
-        old_obv_final (float):
-            과거 구간 마지막 봉의 OBV 누적값
-        compare_prev_close (float):
-            신규 구간 첫 봉 직전 종가. 첫 봉 상승/하락 판단에 필요
-        dropna_indicators (bool):
-            True면 지표 계산 후 NaN 행 제거
-
-    Returns:
-        pd.DataFrame:
-            - df_new 구간의 지표가 추가된 결과
-            - OBV는 old_obv_final을 이어서 계산
-            - 다른 롤링 지표는 df_new 범위만 재계산 (초반부 NaN 가능)
-            - dropna_indicators=True 시 NaN 행 제거
+    (1) old tail + new 구간 concat 후, calc_all_indicators로 전체 지표 1차 계산
+    (2) OBV/obv_raw에 offset 적용 (과거 tail 마지막 obv와 이어붙임)
+    (3) obv_sma_x 등은 offset 반영 후 새로 롤링 계산
+    (4) dropna, slice -> 최종 반환
     """
     if df_new.empty:
         print("[WARN] preprocess_incremental_ohlcv_data: df_new 비어 있음.")
         return df_new
 
+    # 신규 구간: 숫자 변환 & 결측 검사
     for col in ["open", "high", "low", "close", "volume"]:
         if col not in df_new.columns:
-            raise ValueError(f"[ERROR] 필수 컬럼 '{col}'이 df_new에 없음.")
+            raise ValueError(f"[ERROR] '{col}'가 df_new에 없음")
         df_new[col] = pd.to_numeric(df_new[col], errors="coerce")
 
     if df_new[["open","high","low","close","volume"]].isna().any().any():
-        raise ValueError("[ERROR] OHLC나 volume에 NaN 존재. 데이터 오류.")
+        raise ValueError("[ERROR] df_new에 OHLC/volume NaN 존재")
 
-    # 우선 MA/RSI/Filter 등 롤링 지표 계산
-    df_new = calc_all_indicators(df_new)
-
-    # obv_raw가 생성되었을 것. 첫 봉=0 형태.
-    # old_obv_final을 이어서 계산하기 위해 증분 계산
-    if "obv_raw" not in df_new.columns:
-        raise ValueError("[ERROR] obv_raw가 없어 누적 이어붙이기 불가. OBV 설정 확인.")
-
-    # obv_increment = obv_raw.diff() (첫 봉은 obv_raw[0], 보통 0)
-    df_new["obv_increment"] = df_new["obv_raw"].diff().fillna(df_new["obv_raw"])
-
-    obv_list = []
-    # 첫 봉 계산
-    first_close = df_new.iloc[0]["close"]
-    first_vol = df_new.iloc[0]["volume"]
-    if first_close > compare_prev_close:
-        obv_first = old_obv_final + first_vol
+    # 과거 tail 정리
+    if df_old_tail is None:
+        df_old_tail = pd.DataFrame()
     else:
-        obv_first = old_obv_final - first_vol
-    obv_list.append(obv_first)
+        df_old_tail = df_old_tail.copy()
+        df_old_tail.sort_values("datetime_utc", inplace=True)
+        df_old_tail.reset_index(drop=True, inplace=True)
 
-    # 2번째 봉부터
-    for i in range(1, len(df_new)):
-        prev_obv = obv_list[-1]
-        inc = df_new.iloc[i]["obv_increment"]  # + or - volume
-        obv_val = prev_obv + inc
-        obv_list.append(obv_val)
+    # --------------------------
+    # 1) 병합 후 1차 지표 계산
+    # --------------------------
+    df_merged = pd.concat([df_old_tail, df_new], ignore_index=True)
+    df_merged.sort_values("datetime_utc", inplace=True)
+    df_merged.reset_index(drop=True, inplace=True)
 
-    df_new["obv"] = pd.Series(obv_list, index=df_new.index).round(2)
+    df_merged = calc_all_indicators(df_merged)
 
-    # obv_increment 등 임시 컬럼 제거
-    if "obv_increment" in df_new.columns:
-        df_new.drop(columns=["obv_increment"], inplace=True)
-    # obv_raw를 유지할지 여부는 선택
-    # df_new.drop(columns=["obv_raw"], inplace=True)  # 필요하다면
+    # --------------------------
+    # 2) OBV offset 적용
+    # --------------------------
+    # df_old_tail 마지막 obv / obv_raw
+    # vs. df_merged에서 같은 위치 obv / obv_raw
+    if not df_old_tail.empty:
+        old_len = len(df_old_tail)
+        if "obv" in df_old_tail.columns and "obv" in df_merged.columns:
+            old_obv_last = df_old_tail.iloc[-1].get("obv", 0.0)
+            merged_obv_tail = df_merged.iloc[old_len - 1].get("obv", 0.0) if old_len > 0 else 0.0
+            obv_offset = old_obv_last - merged_obv_tail
 
-    # dropna_indicators=True 시 지표 NaN 행 제거
+            if "obv_raw" in df_merged.columns and "obv_raw" in df_old_tail.columns:
+                old_obv_raw_last = df_old_tail.iloc[-1].get("obv_raw", 0.0)
+                merged_obv_raw_tail = df_merged.iloc[old_len - 1].get("obv_raw", 0.0)
+                obv_raw_offset = old_obv_raw_last - merged_obv_raw_tail
+            else:
+                obv_raw_offset = obv_offset  # obv_raw 없으면 동일 offset 가정
+
+            # df_merged 전 구간에 offset
+            df_merged["obv"] = df_merged["obv"] + obv_offset
+            if "obv_raw" in df_merged.columns:
+                df_merged["obv_raw"] = df_merged["obv_raw"] + obv_raw_offset
+
+            df_merged["obv"] = df_merged["obv"].round(2)
+            if "obv_raw" in df_merged.columns:
+                df_merged["obv_raw"] = df_merged["obv_raw"].round(2)
+
+    # ----------------------------------
+    # 3) obv_sma_x (등 obv 관련 롤링) 재계산
+    # ----------------------------------
+    # obv_sma_x는 indicators.py에서 obv_raw의 rolling.mean()으로 계산된다는 전제
+    # 여기서만 다시 부분적으로 obv_sma_5, obv_sma_10, obv_sma_30 등 재계산
+    # (calc_all_indicators 전체를 재호출하면 MA/RSI도 2번 계산되므로, 부분만 수행)
+    if "obv_raw" in df_merged.columns:
+        # 원하는 모든 기간이 있으면 루프
+        # 아래는 예시로 obv_sma_5, obv_sma_10, obv_sma_30, obv_sma_50, obv_sma_100 등
+        # 필요하다면 config에서 가져올 수도 있음
+        periods = [5, 10, 30, 50, 100]
+        for p in periods:
+            col_name = f"obv_sma_{p}"
+            # rolling min_periods=p
+            roll_s = df_merged["obv_raw"].rolling(window=p, min_periods=p).mean()
+            df_merged[col_name] = roll_s.round(2)
+
+    # dropna
     if dropna_indicators:
-        df_new.dropna(inplace=True)
-        df_new.reset_index(drop=True, inplace=True)
+        df_merged.dropna(inplace=True)
+        df_merged.reset_index(drop=True, inplace=True)
 
-    return df_new
+    # ----------------------------------
+    # 4) 신규 구간만 슬라이스 후 반환
+    # ----------------------------------
+    min_dt = df_new["datetime_utc"].min()
+    max_dt = df_new["datetime_utc"].max()
+    mask = (df_merged["datetime_utc"] >= min_dt) & (df_merged["datetime_utc"] <= max_dt)
+    final_df = df_merged.loc[mask].copy()
+    final_df.reset_index(drop=True, inplace=True)
+
+    return final_df
