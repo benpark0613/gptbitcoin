@@ -1,214 +1,204 @@
 # gptbitcoin/data/fetch_data.py
-# 구글 스타일, 최소한의 한글 주석
-# 바이낸스 선물 API로 OHLCV를 가져오는 로직 + 예외적 볼륨 교정 로직을 분리.
-# 1) fetch_ohlcv(...)로 klines 수집 → klines_to_dataframe(...)으로 DataFrame 변환
-# 2) fix_ohlcv_exceptions(...)에서 특정 날짜/interval의 볼륨을 하드코딩 교정.
+# Binance 선물 API 연동, OHLCV 수집 및 DB 저장 (Collector 역할)
+# 모든 시간 처리는 기본적으로 UTC 기준으로 진행.
+# DB 저장 시 timestamp_kst 컬럼에는 KST로 변환된 문자열만 기록.
 
-from datetime import datetime, timedelta
-import pytz
+import datetime
+import sys
+import time
+import zoneinfo
+import logging
 
-from binance.client import Client
+import pandas as pd
+import requests
 
-from config.config import (
-    BINANCE_API_KEY,
-    BINANCE_SECRET_KEY,
-    EXCHANGE_OPEN_DATE,
-)
+# 타임존 객체
+_UTC = datetime.timezone.utc
+_TZ_KST = zoneinfo.ZoneInfo("Asia/Seoul")
 
-UTC = pytz.utc
-MAX_LIMIT = 1500
+# Binance 선물 API 엔드포인트
+BINANCE_FAPI_URL = "https://fapi.binance.com/fapi/v1/klines"
 
-INTERVAL_TO_MINUTES = {
-    "1m": 1,
-    "3m": 3,
-    "5m": 5,
-    "15m": 15,
-    "30m": 30,
-    "1h": 60,
-    "2h": 120,
-    "4h": 240,
-    "6h": 360,
-    "8h": 480,
-    "12h": 720,
-    "1d": 1440,
-    "3d": 4320,
-    "1w": 10080,
-    "1M": 43200,
-}
+# 로거 설정
+logger = logging.getLogger(__name__)
 
 
-def _fetch_klines_chunk(client: Client, symbol: str, interval: str,
-                        start_str: str, end_str: str, limit: int = MAX_LIMIT) -> list:
-    """
-    바이낸스 선물 API에서 [start_str ~ end_str] 구간의 봉 데이터를
-    최대 limit개만 받아온다.
-    """
-    return client.futures_historical_klines(
-        symbol=symbol,
-        interval=interval,
-        start_str=start_str,
-        end_str=end_str,
-        limit=limit
-    )
-
-
-def _fetch_klines_full(client: Client, symbol: str, interval: str,
-                       start_utc: datetime, end_utc: datetime) -> list:
-    """
-    [start_utc ~ end_utc] 구간 전체를 여러 번 _fetch_klines_chunk로 호출하여
-    모두 합쳐 반환한다.
-    """
-    all_klines = []
-    current_start = start_utc
-
-    while True:
-        if current_start >= end_utc:
-            break
-
-        chunk = _fetch_klines_chunk(
-            client,
-            symbol,
-            interval,
-            current_start.strftime("%Y-%m-%d %H:%M:%S"),
-            end_utc.strftime("%Y-%m-%d %H:%M:%S"),
-            limit=MAX_LIMIT
-        )
-        if not chunk:
-            # 더 이상 받아올 데이터가 없으면 중단
-            break
-
-        all_klines.extend(chunk)
-
-        last_open_time_ms = chunk[-1][0]
-        last_open_dt_utc = datetime.utcfromtimestamp(last_open_time_ms / 1000.0).replace(tzinfo=UTC)
-        # 다음 chunk는 마지막 open_time + 1초 후부터
-        current_start = last_open_dt_utc + timedelta(seconds=1)
-
-    return all_klines
-
-
-def klines_to_dataframe(klines: list) -> 'pd.DataFrame':
-    """
-    바이낸스 klines(list)를 Pandas DataFrame으로 변환.
-    columns = ["datetime_utc","open","high","low","close","volume"].
-    여기서는 단순 변환만 하고, 예외 교정은 별도 함수에서 처리한다.
-    """
-    import pandas as pd
-
-    df_list = []
-    for row in klines:
-        # row: [open_time, open, high, low, close, volume, ...]
-        open_time_ms = int(row[0])
-        dt_utc = datetime.utcfromtimestamp(open_time_ms / 1000.0).replace(tzinfo=UTC)
-        dt_str = dt_utc.strftime("%Y-%m-%d %H:%M:%S")
-
-        o_val = float(row[1])
-        h_val = float(row[2])
-        l_val = float(row[3])
-        c_val = float(row[4])
-        vol_val = float(row[5])  # 이후 교정 필요 시 fix_ohlcv_exceptions에서 처리
-
-        # volume 정수 반올림
-        vol_val = round(vol_val)
-
-        df_list.append([dt_str, o_val, h_val, l_val, c_val, vol_val])
-
-    import pandas as pd
-    df = pd.DataFrame(df_list, columns=["datetime_utc","open","high","low","close","volume"])
-    return df
-
-
-def fix_ohlcv_exceptions(df: 'pd.DataFrame', interval: str) -> 'pd.DataFrame':
-    """
-    특정 날짜/interval 조합에 대해
-    하드코딩된 볼륨값 등 예외처리를 수행하는 함수.
-    여러 케이스를 대비해 딕셔너리나 조건문으로 처리 가능.
-    """
-    import pandas as pd
-
-    # 예시: (날짜, interval) => 강제 볼륨
-    # 필요한 만큼 추가 가능
-    volume_fixes = {
-        ("2023-08-16", "1d"): 280545,
-        # ("2023-08-20", "4h"): 123456,  # 필요 시 이런 식으로 확장
-    }
-
-    # df['datetime_utc']가 "YYYY-MM-DD HH:MM:SS" 형태이므로
-    # 날짜 부분만 추출해 interval과 함께 확인
-    for idx in df.index:
-        dt_str = df.at[idx, "datetime_utc"]  # "YYYY-MM-DD HH:MM:SS"
-        date_only = dt_str.split(" ")[0]     # "YYYY-MM-DD"
-
-        key = (date_only, interval)         # 튜플 키
-        if key in volume_fixes:
-            df.at[idx, "volume"] = volume_fixes[key]
-
-    return df
-
-
-def fetch_ohlcv(symbol: str, interval: str, start_str: str, end_str: str) -> list:
-    """
-    바이낸스 선물 API에서 [start_str ~ end_str] 구간의 봉 데이터를 전부 받아,
-    klines 리스트로 반환한다. (DB 저장 X)
-    EXCHANGE_OPEN_DATE 이전 요청은 의미 없으므로, start_str을 보정할 수 있음.
+def _parse_utc_datetime(dt_str: str) -> datetime.datetime:
+    """UTC 기준의 날짜/시간 문자열(예: 'YYYY-MM-DD HH:MM:SS')을 UTC datetime 객체로 변환한다.
 
     Args:
-        symbol (str): 예) "BTCUSDT"
-        interval (str): 예) "1d", "5m" 등
-        start_str (str): 예) "2019-01-01"
-        end_str (str): 예) "2020-01-01"
+        dt_str (str): UTC 기준 시간 문자열
 
     Returns:
-        list: klines = [
-            [open_time, open, high, low, close, volume, ...], ...
-        ]
+        datetime.datetime: tzinfo가 UTC로 지정된 datetime 객체
     """
-    client = Client(BINANCE_API_KEY, BINANCE_SECRET_KEY)
+    return datetime.datetime.fromisoformat(dt_str).replace(tzinfo=_UTC)
 
-    exchange_open_dt = datetime.strptime(EXCHANGE_OPEN_DATE, "%Y-%m-%d")
-    user_start_dt = datetime.strptime(start_str, "%Y-%m-%d")
-    user_end_dt   = datetime.strptime(end_str,   "%Y-%m-%d")
 
-    actual_start_dt = max(exchange_open_dt, user_start_dt)
-    if user_end_dt <= exchange_open_dt:
-        print("[WARN] 요청한 end_date가 거래소 오픈일과 같거나 이전이므로, 데이터 없음.")
-        return []
+def _convert_utc_to_kst_str(utc_dt: datetime.datetime) -> str:
+    """UTC datetime 객체를 KST(UTC+9) 시간 문자열로 변환한다.
 
-    start_utc = UTC.localize(actual_start_dt)
-    end_utc   = UTC.localize(user_end_dt)
+    Args:
+        utc_dt (datetime.datetime): tzinfo가 UTC로 설정된 datetime 객체
 
-    print(f"[INFO] fetch_ohlcv => symbol={symbol}, interval={interval}, "
-          f"start={actual_start_dt}, end={user_end_dt}")
+    Returns:
+        str: 'YYYY-MM-DD HH:MM:SS' 형식의 KST 문자열
+    """
+    dt_kst = utc_dt.astimezone(_TZ_KST)
+    return dt_kst.strftime("%Y-%m-%d %H:%M:%S")
 
-    # 1) klines 가져오기
-    klines = _fetch_klines_full(client, symbol, interval, start_utc, end_utc)
 
-    # 2) DataFrame 변환
-    df_raw = klines_to_dataframe(klines)
+def _fetch_binance_futures_ohlcv(
+    symbol: str,
+    timeframe: str,
+    start_utc_dt: datetime.datetime,
+    end_utc_dt: datetime.datetime,
+    limit: int = 1500,
+) -> pd.DataFrame:
+    """Binance 선물 API를 사용하여 OHLCV 데이터를 수집한다.
 
-    # 3) 예외 교정
-    df_fixed = fix_ohlcv_exceptions(df_raw, interval)
+    Args:
+        symbol (str): 거래 심볼 (예: 'BTCUSDT')
+        timeframe (str): 바이낸스 선물 간격 (예: '1d', '1h' 등)
+        start_utc_dt (datetime.datetime): UTC 기준 시작 시각
+        end_utc_dt (datetime.datetime): UTC 기준 종료 시각
+        limit (int): 한 번 API 호출로 가져올 수 있는 최대 캔들 수 (기본 1500)
 
-    # 필요 시 df_fixed => list 형태로 되돌릴 수도 있음
-    # 여기서는 list로 반환한다면 원래 klines와 동일 구조로 만들어야 함
-    # [ [open_time, open, high, low, close, volume, ...], ... ]
+    Returns:
+        pd.DataFrame:
+            OHLCV 정보를 담은 DataFrame
+            컬럼: ['symbol', 'timeframe', 'open_time_ms', 'timestamp_kst',
+                   'open', 'high', 'low', 'close', 'volume']
+    """
+    all_rows = []
+    current_utc_dt = start_utc_dt
 
-    result_list = []
-    for _, row in df_fixed.iterrows():
-        dt_str = row["datetime_utc"]
-        # dt_str -> timestamp(ms) 변환
-        dt_obj = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
-        dt_utc = dt_obj.replace(tzinfo=UTC)
-        open_time_ms = int(dt_utc.timestamp() * 1000)
+    while True:
+        params = {
+            "symbol": symbol.upper(),
+            "interval": timeframe,
+            "limit": limit,
+            "startTime": int(current_utc_dt.timestamp() * 1000),
+            "endTime": int(end_utc_dt.timestamp() * 1000),
+        }
+        response = requests.get(BINANCE_FAPI_URL, params=params, timeout=10)
 
-        # klines 구조: [open_time, open, high, low, close, volume, ...]
-        result_list.append([
-            open_time_ms,
-            row["open"],
-            row["high"],
-            row["low"],
-            row["close"],
-            row["volume"]
-        ])
+        if response.status_code != 200:
+            logger.error(f"Binance API 오류: {response.text}")
+            raise Exception(f"Binance API Error: {response.text}")
 
-    return result_list
+        data = response.json()
+        if not data:
+            # 더 이상 가져올 데이터가 없으면 종료
+            break
+
+        for item in data:
+            open_time_ms = int(item[0])
+            open_price = float(item[1])
+            high_price = float(item[2])
+            low_price = float(item[3])
+            close_price = float(item[4])
+            volume = float(item[5])
+
+            # open_time_ms(UTC ms) -> UTC datetime -> KST 문자열
+            utc_dt = datetime.datetime.utcfromtimestamp(open_time_ms / 1000).replace(tzinfo=_UTC)
+            kst_time_str = _convert_utc_to_kst_str(utc_dt)
+
+            row = [
+                symbol,
+                timeframe,
+                open_time_ms,
+                kst_time_str,
+                open_price,
+                high_price,
+                low_price,
+                close_price,
+                volume,
+            ]
+            all_rows.append(row)
+
+        # 마지막 봉의 open_time_ms로부터 다음 호출 시작 시점 계산
+        last_open_time_ms = int(data[-1][0])
+        last_utc_dt = datetime.datetime.utcfromtimestamp(last_open_time_ms / 1000).replace(tzinfo=_UTC)
+
+        # 더 이상 진행할 필요 없거나 limit 미만 캔들이면 반복 종료
+        if last_utc_dt >= end_utc_dt or len(data) < limit:
+            break
+
+        # 다음 요청의 시작 시간: 마지막 봉 + 1ms
+        current_utc_dt = last_utc_dt + datetime.timedelta(milliseconds=1)
+        time.sleep(0.2)  # Rate Limit 보호
+
+    columns = [
+        "symbol", "timeframe", "open_time_ms", "timestamp_kst",
+        "open", "high", "low", "close", "volume"
+    ]
+    return pd.DataFrame(all_rows, columns=columns)
+
+
+def update_data_db(
+    symbol: str,
+    timeframes: list[str],
+    start_utc_str: str,
+    end_utc_str: str,
+    dropna_indicators: bool = False,
+) -> None:
+    """지정된 (symbol, timeframes)와 UTC 구간(start_utc_str ~ end_utc_str)에 대해
+    Binance 선물 OHLCV 데이터를 수집하고 DB에 저장한다.
+
+    처리 순서:
+      1) 입력된 시간 문자열을 UTC datetime 객체로 변환
+      2) DB에 해당 구간 데이터 삭제
+      3) Binance API를 통해 OHLCV 수집
+      4) 결측 여부 검사 후 DB에 삽입
+
+    Args:
+        symbol (str): 예) 'BTCUSDT'
+        timeframes (List[str]): 예) ['1d', '4h', ...]
+        start_utc_str (str): UTC 기준 시작 시간 (예: '2021-01-01 00:00:00')
+        end_utc_str (str): UTC 기준 종료 시간
+        dropna_indicators (bool): True 시 DataFrame 내 결측 행 제거
+    """
+    start_utc_dt = _parse_utc_datetime(start_utc_str)
+    end_utc_dt = _parse_utc_datetime(end_utc_str)
+    if end_utc_dt <= start_utc_dt:
+        logger.error("종료 시점이 시작 시점보다 같거나 작습니다.")
+        sys.exit(1)
+
+    from db_manager import delete_ohlcv_data, insert_ohlcv_batch
+
+    for tf in timeframes:
+        logger.info(f"[{symbol}-{tf}] {start_utc_str} ~ {end_utc_str} 구간 데이터 수집 시작...")
+
+        # UTC 문자열 그대로 delete_ohlcv_data에 전달
+        delete_ohlcv_data(symbol, tf, start_utc_str, end_utc_str)
+
+        df = _fetch_binance_futures_ohlcv(symbol, tf, start_utc_dt, end_utc_dt)
+        if df.empty:
+            logger.warning(f"[{symbol}-{tf}] 수집된 데이터가 없습니다.")
+            continue
+
+        # 결측치 검사
+        if df[["open", "high", "low", "close", "volume"]].isnull().any().any():
+            logger.error("OHLCV 데이터에 결측치 발견. 수집을 중단합니다.")
+            sys.exit(1)
+
+        if dropna_indicators:
+            df.dropna(inplace=True)
+
+        insert_ohlcv_batch(df)
+        logger.info(f"[{symbol}-{tf}] 구간 데이터 DB 저장 완료.")
+
+
+def main():
+    """단독 실행 시 사용되는 예시 함수."""
+    logging.basicConfig(level=logging.INFO)  # 간단한 로거 설정
+    symbol = "BTCUSDT"
+    timeframes = ["1d", "4h"]
+    start_utc_str = "2019-09-08 00:00:00"
+    end_utc_str = "2025-03-04 00:00:00"
+    update_data_db(symbol, timeframes, start_utc_str, end_utc_str, dropna_indicators=False)
+
+
+if __name__ == "__main__":
+    main()

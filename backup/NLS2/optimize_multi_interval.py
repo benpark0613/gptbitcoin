@@ -58,7 +58,7 @@ def main():
     config_path = os.path.join("module", "config", "nls2_opt_config.json")
 
     # 결과 저장 폴더 확인 및 생성 후 내용 삭제
-    result_dir = "../../results"
+    result_dir = "../20250303/results"
     if not os.path.exists(result_dir):
         os.makedirs(result_dir)
     else:

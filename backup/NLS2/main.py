@@ -169,7 +169,7 @@ def run_single_backtest(df, interval, symbol, start_ts, end_ts, strategy_cls, st
 # 5) 메인 함수
 ##############################################################################
 def main():
-    clear_results_folder("../../results")
+    clear_results_folder("../20250303/results")
 
     symbol = "BTCUSDT"
     intervals = ["4h", "1h"]

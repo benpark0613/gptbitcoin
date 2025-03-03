@@ -9,4 +9,5 @@ venv/
 *.txt
 *.zip
 *.pyc
-data/db/ohlcv.sqlite
+backup/20250303/data/db/ohlcv.sqlite
+*.sqlite
