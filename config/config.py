@@ -41,34 +41,73 @@ IS_OOS_BOUNDARY_DATE = "2024-12-31 00:00:00"
 LOG_LEVEL = "DEBUG"  # "INFO", "WARNING" 등으로 조정 가능
 
 # 지표 관련
-INDICATOR_COMBO_SIZES = [1, 2, 3]  # 한 번에 사용할 보조지표 개수
+INDICATOR_COMBO_SIZES = [1, 2]  # 한 번에 사용할 보조지표 개수
+# INDICATOR_COMBO_SIZES 최대 3인 경우 사용할 보조지표 설정값, 삭제 금지
+# INDICATOR_CONFIG = {
+#     "MA": {
+#         "short_periods": [5, 10, 20],
+#         "long_periods": [50, 100, 200],
+#         "band_filters": [0.0, 0.02],
+#     },
+#     "RSI": {
+#         "lengths": [14, 21, 30],
+#         "overbought_values": [70, 80],
+#         "oversold_values": [30, 20],
+#     },
+#     "OBV": {
+#         "short_periods": [5, 10],
+#         "long_periods": [30, 50, 100],
+#     },
+#     "Filter": {
+#         "windows": [10, 20],
+#         "x_values": [0.05, 0.1],
+#         "y_values": [0.05, 0.1],
+#     },
+#     "Support_Resistance": {
+#         "windows": [10, 20],
+#         "band_pcts": [0.0, 0.01, 0.02],
+#     },
+#     "Channel_Breakout": {
+#         "windows": [14, 20],
+#         "c_values": [0.1, 0.2, 0.3],
+#     },
+# }
+
+# INDICATOR_COMBO_SIZES 최대 2인 경우 사용할 보조지표 설정값, 삭제 금지
 INDICATOR_CONFIG = {
     "MA": {
-        "short_periods": [5, 10, 20],
-        "long_periods": [50, 100, 200],
-        "band_filters": [0.0, 0.02],
+        # 주로 쓰이는 단기MA 4종, 장기MA 4종 + 필터 3종
+        "short_periods": [5, 10, 20, 30],
+        "long_periods": [50, 100, 200, 300],
+        "band_filters": [0.0, 0.01, 0.02],
     },
     "RSI": {
-        "lengths": [14, 21, 30],
-        "overbought_values": [70, 80],
-        "oversold_values": [30, 20],
+        # 길이는 14,21,30,50 등 자주 사용
+        # 과매수/과매도 범위도 3개씩
+        "lengths": [14, 21, 30, 50],
+        "overbought_values": [70, 80, 85],
+        "oversold_values": [30, 20, 15],
     },
     "OBV": {
-        "short_periods": [5, 10],
-        "long_periods": [30, 50, 100],
+        # OBV 계산 시 단/장기 윈도우 예시
+        "short_periods": [5, 10, 20],
+        "long_periods": [30, 50, 100, 200],
     },
     "Filter": {
-        "windows": [10, 20],
-        "x_values": [0.05, 0.1],
-        "y_values": [0.05, 0.1],
+        # 필터룰 window는 10,20,30,50 / x,y_pct는 보통 5%,10%,15%
+        "windows": [10, 20, 30, 50],
+        "x_values": [0.05, 0.1, 0.15],
+        "y_values": [0.05, 0.1, 0.15],
     },
     "Support_Resistance": {
-        "windows": [10, 20],
-        "band_pcts": [0.0, 0.01, 0.02],
+        # 윈도우 10,20,30,50,100 + 밴드 0,1%,2%,3%
+        "windows": [10, 20, 30, 50, 100],
+        "band_pcts": [0.0, 0.01, 0.02, 0.03],
     },
     "Channel_Breakout": {
-        "windows": [14, 20],
-        "c_values": [0.1, 0.2, 0.3],
+        # 윈도우 14,20,30,50,60 + c_values 0.1~0.6
+        "windows": [14, 20, 30, 50, 60],
+        "c_values": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
     },
 }
 

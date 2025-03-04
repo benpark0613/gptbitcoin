@@ -1,10 +1,9 @@
 # gptbitcoin/utils/date_time.py
 
 import datetime
-import zoneinfo
+
 
 def today():
-    # 한국 시간대(KST = UTC+9)
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def main():
