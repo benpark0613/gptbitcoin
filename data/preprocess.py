@@ -65,33 +65,3 @@ def merge_old_recent(df_old: pd.DataFrame, df_recent: pd.DataFrame) -> pd.DataFr
     merged.reset_index(drop=True, inplace=True)
 
     return merged
-
-
-if __name__ == "__main__":
-    """
-    테스트 코드: 샘플 OHLCV 데이터를 만들어 전처리 로직을 검증한다.
-    중복/이상이 있으면 예외가 발생하도록 의도적 데이터 예시를 넣었다.
-    """
-    sample_data = {
-        # open_time=3인 행이 중복됨
-        "open_time": [1, 2, 3, 3, 4],
-        "open": [10000, 10050, 10100, 10100, -1],   # 마지막 행 open=-1 (이상치 유발)
-        "high": [10100, 10100, 10200, 10200, 10300],
-        "low": [9900, 10000, 10050, 10050, 10100],
-        "close": [10050, 10080, 10150, 10150, 10250],
-        "volume": [1.2, 2.5, 3.7, 3.7, 4.0],
-    }
-    df_test = pd.DataFrame(sample_data)
-
-    try:
-        df_cleaned = clean_ohlcv(df_test)
-        print("중복·이상치 검사 통과:", df_cleaned)
-    except ValueError as e:
-        print("예외 발생:", e)
-
-    # 예외가 발생하므로, 이 아래 코드는 통과하지 않을 수 있음
-    df_old = df_test[df_test["open_time"] < 3]
-    df_recent = df_test[df_test["open_time"] >= 3]
-    df_merged = merge_old_recent(df_old, df_recent)
-    print("\nMerged DataFrame:")
-    print(df_merged)

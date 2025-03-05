@@ -133,27 +133,3 @@ def get_ohlcv_from_binance(
         raise ValueError("OHLCV 데이터 내 결측치(NaN)가 발견되었습니다.")
 
     return df
-
-
-# 아래는 테스트 코드
-if __name__ == "__main__":
-    """
-    이 스크립트를 단독으로 실행했을 때,
-    아래 예시 파라미터로 fetch 함수를 테스트한다.
-    """
-    test_symbol = "BTCUSDT"
-    test_timeframe = "1h"
-    test_start = "2023-01-01 00:00:00"
-    test_end = "2023-01-03 00:00:00"
-
-    try:
-        df_test = get_ohlcv_from_binance(
-            symbol=test_symbol,
-            timeframe=test_timeframe,
-            start_time=test_start,
-            end_time=test_end
-        )
-        print(df_test.head())
-        print(f"총 {len(df_test)}개의 봉 데이터를 수집했습니다.")
-    except Exception as e:
-        print(f"오류 발생: {e}")

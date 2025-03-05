@@ -22,7 +22,8 @@ START_CAPITAL = 1_000_000 # 백테스트 시작 자본
 
 # 심볼, 타임프레임
 SYMBOL = "BTCUSDT"        # 기본 심볼
-TIMEFRAMES = ["1d", "4h", "1h", "15m"]  # 사용할 타임프레임 목록
+# TIMEFRAMES = ["1d", "4h", "1h", "15m"]  # 사용할 타임프레임 목록
+TIMEFRAMES = ["1d"]  # 사용할 타임프레임 목록
 
 # 바이낸스 비트코인 선물 오픈일 (API 요청 시 구간 참조)
 EXCHANGE_OPEN_DATE = "2019-09-08 00:00:00"

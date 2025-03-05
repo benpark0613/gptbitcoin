@@ -1,14 +1,21 @@
 # gptbitcoin/data/update_data.py
-# Collector 단계에서 신규 OHLCV 데이터를 DB에 반영하는 모듈.
-# 기존의 DB 초기화, DELETE, INSERT 로직을 utils/db_utils.py로 이관하고,
-# 본 모듈은 해당 유틸 함수를 호출하여 수행.
+"""
+Collector 단계에서 신규 OHLCV 데이터를 DB에 반영하는 모듈.
+기존의 DB 초기화, DELETE, INSERT 로직을 utils/db_utils.py로 이관하고,
+본 모듈은 해당 유틸 함수를 호출하여 수행한다.
+
+데이터베이스에는 바이낸스에서 받아온 원본 open_time(UTC ms)와,
+이를 변환한 timestamp_kst (한국시간, "YYYY-MM-DD HH:MM:SS")를 저장한다.
+timestamp_kst는 open_time 왼쪽 컬럼에 위치하며, open, high, low, close, volume 등
+나머지 컬럼은 원본 그대로 저장된다.
+"""
 
 import sqlite3
 import sys
 from datetime import datetime, timedelta
 
 # fetch_data.py에서 데이터 수집 함수 임포트
-from fetch_data import get_ohlcv_from_binance
+from data.fetch_data import get_ohlcv_from_binance
 
 # config.py에서 DB 관련 설정값 로드
 try:
@@ -34,13 +41,13 @@ except ImportError:
 
 
 def update_data_db(
-    symbol: str,
-    timeframe: str,
-    start_str: str,
-    end_str: str,
-    db_path: str = DB_PATH,
-    boundary_date: str = DB_BOUNDARY_DATE,
-    dropna_indicators: bool = False
+        symbol: str,
+        timeframe: str,
+        start_str: str,
+        end_str: str,
+        db_path: str = DB_PATH,
+        boundary_date: str = DB_BOUNDARY_DATE,
+        dropna_indicators: bool = False
 ) -> None:
     """
     (symbol, timeframe, start_str ~ end_str) 구간의 OHLCV 데이터를
@@ -48,10 +55,12 @@ def update_data_db(
 
     DB에 old_data, recent_data 테이블이 없으면 init_db()로 생성.
     boundary_date 이전(open_time < boundary_ts)은 old_data,
-    이후(open_time >= boundary_ts)은 recent_data에 저장.
-    (symbol, timeframe, timestamp_utc)가 동일하면 DELETE 후 다시 INSERT한다.
-    수집 과정에서 NaN이 발생하면 예외로 중단.
-    timestamp_kst 컬럼에는 "YYYY-MM-DD HH:MM:SS" 형태의 KST 문자열을 저장한다.
+    이후(open_time >= boundary_ts)은 recent_data에 저장한다.
+
+    원본 데이터의 open_time 컬럼은 그대로 저장하며,
+    open_time을 변환한 timestamp_kst 컬럼은 open_time 왼쪽에 저장된다.
+
+    동일 (symbol, timeframe, open_time)이 존재하면 DELETE 후 INSERT 한다.
 
     Args:
         symbol (str): 예) "BTCUSDT"
@@ -60,12 +69,12 @@ def update_data_db(
         end_str (str): 수집 종료 ("YYYY-MM-DD HH:MM:SS")
         db_path (str): DB 파일 경로 (config.py 기본값)
         boundary_date (str): old/recent 파티션 구분 시점 (config.py 기본값)
-        dropna_indicators (bool): 보조지표 NaN 시 제거 대신 예외 처리(현재 예시 미사용)
+        dropna_indicators (bool): 보조지표 NaN 시 제거 대신 예외 처리 (현재 미사용)
 
     Raises:
         ValueError: DataFrame에 NaN 존재 시
         sqlite3.Error: DB 작업 실패 시
-        RuntimeError: fetch_data 실패 시
+        RuntimeError: 데이터 수집 실패 시
     """
     # DB 연결
     try:
@@ -74,7 +83,7 @@ def update_data_db(
         print(f"[update_data_db] DB 연결 실패: {e}")
         sys.exit(1)
 
-    # 테이블 생성(없으면)
+    # 테이블 생성 (없으면)
     try:
         init_db(conn)
     except sqlite3.Error as e:
@@ -82,7 +91,7 @@ def update_data_db(
         print(f"[update_data_db] 테이블 생성 실패: {e}")
         sys.exit(1)
 
-    # boundary_date, start, end → UTC ms
+    # boundary_date, start, end → UTC ms (open_time 기준)
     boundary_dt = datetime.strptime(boundary_date, "%Y-%m-%d %H:%M:%S")
     boundary_ts = int(boundary_dt.timestamp() * 1000)
 
@@ -94,7 +103,7 @@ def update_data_db(
     print(f" - 기간: {start_str} ~ {end_str}")
     print(f" - boundary_date={boundary_date}")
 
-    # 먼저 old_data, recent_data 모두에서 구간 해당 레코드 DELETE
+    # 먼저 old_data, recent_data에서 해당 구간 레코드 DELETE
     try:
         delete_ohlcv(conn, "old_data", symbol, timeframe, start_ms, end_ms)
         delete_ohlcv(conn, "recent_data", symbol, timeframe, start_ms, end_ms)
@@ -118,13 +127,13 @@ def update_data_db(
 
     print(f"[update_data_db] 수집 성공. {len(df)}개 봉 데이터.")
 
-    # 삽입할 데이터 준비
+    # 삽입할 데이터 준비 (컬럼 순서: symbol, timeframe, timestamp_kst, open_time, open, high, low, close, volume)
     rows_old = []
     rows_recent = []
 
     for _, row in df.iterrows():
-        ts_utc = int(row["open_time"])  # UTC ms
-        dt_utc = datetime.utcfromtimestamp(ts_utc / 1000.0)
+        ot = int(row["open_time"])  # 바이낸스 원본 open_time (UTC ms)
+        dt_utc = datetime.utcfromtimestamp(ot / 1000.0)
         dt_kst = dt_utc + timedelta(hours=9)
         timestamp_kst_str = dt_kst.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -137,13 +146,17 @@ def update_data_db(
         data_tuple = (
             symbol,
             timeframe,
-            ts_utc,
             timestamp_kst_str,
-            o, h, l, c, v
+            ot,
+            o,
+            h,
+            l,
+            c,
+            v
         )
 
-        # boundary_date 기준 old/recent 분류
-        if ts_utc < boundary_ts:
+        # boundary_date 기준 분류 (open_time 사용)
+        if ot < boundary_ts:
             rows_old.append(data_tuple)
         else:
             rows_recent.append(data_tuple)
@@ -157,7 +170,6 @@ def update_data_db(
             insert_ohlcv(conn, "old_data", rows_old)
         if row_count_recent > 0:
             insert_ohlcv(conn, "recent_data", rows_recent)
-
     except sqlite3.Error as e:
         conn.close()
         raise sqlite3.Error(f"[update_data_db] INSERT 실패: {e}")
@@ -176,7 +188,8 @@ if __name__ == "__main__":
       4) end_str
     나머지(DB 경로 등)는 config.py에서 로드.
 
-    timestamp_kst 컬럼에는 "YYYY-MM-DD HH:MM:SS" 형태로 한국시간을 저장.
+    timestamp_kst 컬럼은 "YYYY-MM-DD HH:MM:SS" 형태의 한국시간,
+    open_time 컬럼은 바이낸스에서 받아온 원본 값(UTC ms)이다.
     """
 
     symbol = "BTCUSDT"
