@@ -28,15 +28,23 @@ TIMEFRAMES = ["1d"]  # 사용할 타임프레임 목록
 # 바이낸스 비트코인 선물 오픈일 (API 요청 시 구간 참조)
 EXCHANGE_OPEN_DATE = "2019-09-08 00:00:00"
 
-# DB에서 old_data / recent_data 를 나누는 기준 시점
+# DB_BOUNDARY_DATE:
+#   이 날짜/시각을 기준으로 DB에 저장할 때 old_data, recent_data 테이블을 분할한다.
+#   예) open_time < DB_BOUNDARY_DATE => old_data 테이블
+#       open_time >= DB_BOUNDARY_DATE => recent_data 테이블
+#   Collector 단계(update_data.py)에서 수집된 OHLCV 데이터를 DB에 넣을 때 사용한다.
 DB_BOUNDARY_DATE = "2025-01-01 00:00:00"
 
 # 백테스트 전체 기간
-START_DATE = "2023-01-01 00:00:00"  # 백테스트 시작
+START_DATE = "2020-01-01 00:00:00"  # 백테스트 시작
 END_DATE = today()                  # 백테스트 종료
 
-# IS/OOS 구분 시점 (테스트 전체 기간 중 이 값을 기준으로 IS/OOS를 나눔)
-IS_OOS_BOUNDARY_DATE = "2024-12-31 00:00:00"
+# IS_OOS_BOUNDARY_DATE:
+#   백테스트 시점에서 인-샘플(IS) 구간과 아웃-오브-샘플(OOS) 구간을 나누는 기준 날짜/시각이다.
+#   예) open_time < IS_OOS_BOUNDARY_DATE => IS 구간
+#       open_time >= IS_OOS_BOUNDARY_DATE => OOS 구간
+#   main.py 등 백테스트 모듈에서 IS/OOS 분리 시 활용한다.
+IS_OOS_BOUNDARY_DATE = "2025-01-01 00:00:00"
 
 # 로그 레벨
 LOG_LEVEL = "DEBUG"  # "INFO", "WARNING" 등으로 조정 가능
