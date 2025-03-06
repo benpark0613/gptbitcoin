@@ -8,7 +8,7 @@ import sys
 from datetime import datetime
 
 import pandas as pd
-from binance import Client
+from binance.client import Client
 
 # config.py에서 API 키 로드
 # 필요 시 PYTHONPATH를 조정하거나 아래 import 경로를 조정하세요.

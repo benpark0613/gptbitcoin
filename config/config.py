@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 
 from utils.date_time import today
 
+# 로그 레벨
+LOG_LEVEL = "DEBUG"  # "INFO", "WARNING" 등으로 조정 가능
+
 # .env 로드
 load_dotenv()
 BINANCE_API_KEY = os.getenv("BINANCE_ACCESS_KEY", "")   # 바이낸스 API 키
@@ -35,10 +38,6 @@ EXCHANGE_OPEN_DATE = "2019-09-08 00:00:00"
 #   Collector 단계(update_data.py)에서 수집된 OHLCV 데이터를 DB에 넣을 때 사용한다.
 DB_BOUNDARY_DATE = "2025-01-01 00:00:00"
 
-# 백테스트 전체 기간
-START_DATE = "2020-01-01 00:00:00"  # 백테스트 시작
-END_DATE = today()                  # 백테스트 종료
-
 # IS_OOS_BOUNDARY_DATE:
 #   백테스트 시점에서 인-샘플(IS) 구간과 아웃-오브-샘플(OOS) 구간을 나누는 기준 날짜/시각이다.
 #   예) open_time < IS_OOS_BOUNDARY_DATE => IS 구간
@@ -46,8 +45,9 @@ END_DATE = today()                  # 백테스트 종료
 #   main.py 등 백테스트 모듈에서 IS/OOS 분리 시 활용한다.
 IS_OOS_BOUNDARY_DATE = "2025-01-01 00:00:00"
 
-# 로그 레벨
-LOG_LEVEL = "DEBUG"  # "INFO", "WARNING" 등으로 조정 가능
+# 백테스트 전체 기간
+START_DATE = "2022-01-01 00:00:00"  # 백테스트 시작
+END_DATE = today()                  # 백테스트 종료
 
 # 지표 관련
 INDICATOR_COMBO_SIZES = [1, 2]  # 한 번에 사용할 보조지표 개수
