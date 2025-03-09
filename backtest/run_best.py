@@ -1,14 +1,15 @@
 # gptbitcoin/backtest/run_best.py
 # 최소한의 한글 주석, 구글 스타일 docstring
-# 단일 콤보(베스트 콤보) 백테스트 + 바이앤홀드(B/H) 백테스트를 함께 진행
-# 결과(콤보와 B/H 모두)를 반환하며, 콘솔 출력은 이 모듈에서 수행하지 않는다.
+# 단일 콤보(베스트 콤보) 백테스트 + 바이앤홀드(B/H) 백테스트를 함께 진행하는 모듈.
+# combo_info 내 buy_time_delay / sell_time_delay / holding_period 가 있으면
+# run_backtest(engine)에 전달한다.
 
 import pandas as pd
 from typing import Dict, Any, List
 
 from backtest.engine import run_backtest
 from analysis.scoring import calculate_metrics
-from strategies.signal_factory import create_signals_for_combo  # 공통 함수로부터 시그널 생성
+from strategies.signal_factory import create_signals_for_combo
 from utils.date_time import ms_to_kst_str
 
 
@@ -17,7 +18,7 @@ def _detect_final_position(trades: List[Dict[str, Any]], df_len: int) -> str:
     마지막 포지션이 청산되지 않았다면 LONG/SHORT, 청산됐다면 FLAT을 반환.
 
     Args:
-        trades (List[Dict[str, Any]]): 매매 내역
+        trades (List[Dict[str, Any]]): 매매 내역 리스트
         df_len (int): 백테스트 구간 DF 길이
 
     Returns:
@@ -39,13 +40,13 @@ def _detect_final_position(trades: List[Dict[str, Any]], df_len: int) -> str:
 
 def _record_trades_info(df: pd.DataFrame, trades: List[Dict[str, Any]]) -> str:
     """
-    트레이드 로그를 문자열로 요약.
+    트레이드 로그를 문자열로 요약한다.
     - Entry/Exit 시각을 KST 기준으로 변환해 출력
-    - 인덱스만 아닌 시간을 확인할 수 있도록 함
+    - 간단히 매매 내역을 확인할 수 있도록 한다.
 
     Args:
-        df (pd.DataFrame): 백테스트 DF (open_time 칼럼 포함)
-        trades (List[Dict[str, Any]]): 매매 내역
+        df (pd.DataFrame): 백테스트에 사용된 DataFrame (open_time 칼럼 포함)
+        trades (List[Dict[str, Any]]): 매매 내역 (pnl, position_type 등 포함)
 
     Returns:
         str: 매매 기록 요약 문자열
@@ -84,12 +85,17 @@ def run_best_single(
     combo_info: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
-    단일 콤보(베스트 콤보)로 백테스트를 1회 수행하고,
-    바이앤홀드(B/H) 백테스트도 함께 수행한다.
-    두 결과를 모두 반환한다.
+    주어진 콤보(단일)로 백테스트를 1회 수행하고,
+    바이앤홀드(B/H) 결과와 함께 반환한다.
+
+    1) combo_params 내 지표 파라미터를 기반으로 매매 시그널을 생성한다.
+    2) run_backtest 수행 (buy_time_delay, sell_time_delay, holding_period 있으면 전달)
+    3) 분석 지표(calculate_metrics) 산출
+    4) B/H도 별도 백테스트하여 동일 지표 산출
+    5) 두 결과를 모두 반환
 
     Args:
-        df (pd.DataFrame): 이미 보조지표가 계산된 DF (open_time, close 등)
+        df (pd.DataFrame): 이미 보조지표가 계산된 DF (open_time, close 등 필수)
         combo_info (Dict[str, Any]): {
             "timeframe": str,
             "combo_params": [ {type=..., ...}, {...} ]
@@ -97,30 +103,50 @@ def run_best_single(
 
     Returns:
         Dict[str, Any]: {
-            "combo_score": {...},            # 콤보 백테스트 성과
+            "combo_score": {...},      # 콤보 백테스트 성과 지표
             "combo_trades": [...],
             "combo_position": "LONG"/"SHORT"/"FLAT",
             "combo_trades_log": str,
-            "bh_score": {...},               # Buy & Hold 성과
+            "bh_score": {...},         # Buy & Hold 성과 지표
             "bh_trades": [...],
             "bh_trades_log": str
         }
     """
-    # ========== 1) 콤보 백테스트 ==========
+    # 1) 콤보 시그널 생성
     combo_params = combo_info.get("combo_params", [])
     timeframe = combo_info.get("timeframe", "unknown")
 
-    # 콤보 시그널 생성
     df_combo = df.copy()
     df_combo = create_signals_for_combo(df_combo, combo_params, out_col="signal_final")
     combo_signals = df_combo["signal_final"].tolist()
 
-    combo_engine_out = run_backtest(df_combo, signals=combo_signals)
+    # 콤보에 명시된 buy_time_delay, sell_time_delay, holding_period 추출
+    buy_td = -1
+    sell_td = -1
+    hold_p = 0
+    for cdict in combo_params:
+        if "buy_time_delay" in cdict:
+            buy_td = cdict["buy_time_delay"]
+        if "sell_time_delay" in cdict:
+            sell_td = cdict["sell_time_delay"]
+        if "holding_period" in cdict:
+            hold_p = cdict["holding_period"]
+
+    # 2) 콤보 백테스트
+    combo_engine_out = run_backtest(
+        df=df_combo,
+        signals=combo_signals,
+        allow_short=True,          # config
+        buy_time_delay=buy_td,
+        sell_time_delay=sell_td,
+        holding_period=hold_p
+    )
     combo_trades = combo_engine_out["trades"]
+
     combo_score = calculate_metrics(
         equity_curve=combo_engine_out["equity_curve"],
         daily_returns=combo_engine_out["daily_returns"],
-        start_capital=combo_engine_out["equity_curve"][0] if combo_engine_out["equity_curve"] else 1_000_000,
+        start_capital=combo_engine_out["equity_curve"][0] if combo_engine_out["equity_curve"] else 100_000,
         trades=combo_trades,
         timeframe=timeframe
     )
@@ -128,21 +154,20 @@ def run_best_single(
     combo_trades_log = _record_trades_info(df_combo, combo_trades)
     combo_position = _detect_final_position(combo_trades, len(df_combo))
 
-    # ========== 2) 바이앤홀드(B/H) 백테스트 ==========
+    # 3) 바이앤홀드(B/H) 백테스트
     bh_signals = [1] * len(df)
     bh_engine_out = run_backtest(df, signals=bh_signals)
     bh_trades = bh_engine_out["trades"]
+
     bh_score = calculate_metrics(
         equity_curve=bh_engine_out["equity_curve"],
         daily_returns=bh_engine_out["daily_returns"],
-        start_capital=bh_engine_out["equity_curve"][0] if bh_engine_out["equity_curve"] else 1_000_000,
+        start_capital=bh_engine_out["equity_curve"][0] if bh_engine_out["equity_curve"] else 100_000,
         trades=bh_trades,
         timeframe=timeframe
     )
-
     bh_trades_log = _record_trades_info(df, bh_trades)
 
-    # ========== 3) 결과 합쳐서 반환 ==========
     return {
         "combo_score": combo_score,
         "combo_trades": combo_trades,

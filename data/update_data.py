@@ -226,7 +226,7 @@ if __name__ == "__main__":
     timeframes = ["1d", "4h", "1h", "15m"]
     # 아래 start_str, end_str도 "UTC 기준"으로 작성해야 함
     start_str = "2019-01-01 00:00:00"   # UTC
-    end_str = "2025-02-01 00:00:00"    # UTC
+    end_str = "2025-03-01 00:00:00"    # UTC
     mode = "full"
 
     print("=== OHLCV 데이터 업데이트(UTC) 시작 ===")

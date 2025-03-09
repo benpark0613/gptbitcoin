@@ -1,57 +1,112 @@
 # gptbitcoin/backtest/run_oos.py
-# 구글 스타일, 최소한의 한글 주석
-# IS(인샘플)에서 통과한(is_passed=True) 전략만 OOS(아웃샘플)에서 재검증 후,
-# 그 결과를 is_rows에 반영해 반환한다.
+# 구글 스타일 docstring 사용, 최소한의 한글 주석.
+# IS 통과 여부와 상관없이 전체 콤보에 대해 OOS(아웃샘플) 구간 백테스트를 수행하고,
+# 매매 내역과 로그(oos_trades_log)까지 함께 저장해 반환한다.
 
 import json
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any
 
+import pandas as pd
 from joblib import Parallel, delayed
 
+from config.config import ALLOW_SHORT, START_CAPITAL
 from analysis.scoring import calculate_metrics
 from backtest.engine import run_backtest
-from config.config import (
-    ALLOW_SHORT,
-    START_CAPITAL
-)
+from strategies.signal_factory import create_signals_for_combo
 from utils.date_time import ms_to_kst_str
 
-# signal_factory에서 create_signals_for_combo 함수를 import
-from strategies.signal_factory import create_signals_for_combo
+
+def _record_trades_info(df: pd.DataFrame, trades: List[Dict[str, Any]]) -> str:
+    """
+    OOS 구간에서 발생한 매매 내역(trades)을 KST 시각으로 요약하여 문자열로 반환한다.
+
+    Args:
+        df (pd.DataFrame): OOS 구간 DataFrame (open_time 칼럼 포함)
+        trades (List[Dict[str, Any]]): 매매 내역 리스트
+
+    Returns:
+        str: 매매 내역 요약 문자열 (예: "No Trades" if empty)
+    """
+    if not trades:
+        return "No Trades"
+
+    logs = []
+    for i, t in enumerate(trades, start=1):
+        e_idx = t.get("entry_index", None)
+        x_idx = t.get("exit_index", None)
+        ptype = t.get("position_type", "N/A")
+        pnl_val = t.get("pnl", 0.0)
+
+        # 진입 시점
+        if isinstance(e_idx, int) and 0 <= e_idx < len(df):
+            ms_val_entry = df.iloc[e_idx]["open_time"]
+            entry_time_str = ms_to_kst_str(ms_val_entry)
+        else:
+            entry_time_str = "N/A"
+
+        # 청산 시점
+        if isinstance(x_idx, int) and 0 <= x_idx < len(df):
+            ms_val_exit = df.iloc[x_idx]["open_time"]
+            exit_time_str = ms_to_kst_str(ms_val_exit)
+        elif isinstance(x_idx, int) and x_idx >= len(df):
+            # DF 범위를 넘어선 경우 End 처리
+            exit_time_str = "End"
+        else:
+            exit_time_str = "N/A"
+
+        logs.append(
+            f"[{i}] {ptype.upper()} Entry={entry_time_str}, "
+            f"Exit={exit_time_str}, PnL={pnl_val:.2f}"
+        )
+
+    return "; ".join(logs)
 
 
 def run_oos(
-    df_oos,
-    is_rows: List[Dict[str, Any]],
+    df_oos: pd.DataFrame,
+    combos: List[List[Dict[str, Any]]],
     timeframe: str,
     start_capital: float = START_CAPITAL
 ) -> List[Dict[str, Any]]:
     """
     OOS(아웃샘플) 백테스트:
-      1) Buy & Hold(OOS) 결과를 is_rows 중 B/H 항목에 기록
-      2) is_passed=True인 전략만 OOS 구간 재검증
-      3) 그 결과를 is_rows에 갱신(oos_* 컬럼)
+      1) Buy & Hold 전략(항상 매수)으로 전체 구간 백테스트 후 oos_* 결과 산출.
+      2) combos 내 모든 지표 파라미터 조합별로 백테스트를 병렬로 수행 (oos_trades_log 포함).
+      3) 각 콤보별 OOS 성과(딕셔너리)를 리스트로 반환.
 
     Args:
-        df_oos (pd.DataFrame): OOS 구간 데이터(지표 포함)
-        is_rows (List[Dict[str,Any]]): run_is 결과(인샘플 성과) 목록
-        timeframe (str): 예) "1d", "4h" 등
-        start_capital (float, optional): OOS 시작 자본
+        df_oos (pd.DataFrame): OOS 구간 시계열 데이터 (OHLCV 및 지표)
+        combos (List[List[Dict[str, Any]]]): 파라미터 조합(콤보) 목록
+        timeframe (str): 예) "1d"
+        start_capital (float, optional): OOS 구간 시작 자본
 
     Returns:
-        List[Dict[str, Any]]: OOS 결과가 반영된 is_rows
+        List[Dict[str, Any]]: [
+            {
+                "timeframe": ...,
+                "oos_start_cap": ...,
+                "oos_end_cap": ...,
+                "oos_return": ...,
+                "oos_trades": ...,
+                "oos_trades_log": ...,
+                "oos_sharpe": ...,
+                "oos_mdd": ...,
+                "used_indicators": ...
+            },
+            ...
+        ]
     """
     if df_oos.empty:
-        return is_rows
+        return []
 
+    # OOS 구간 로그용 시각 (KST)
     oos_start_ms = df_oos.iloc[0]["open_time"]
     oos_end_ms = df_oos.iloc[-1]["open_time"]
     oos_start_kst = ms_to_kst_str(oos_start_ms)
     oos_end_kst = ms_to_kst_str(oos_end_ms)
-
     print(f"[INFO] OOS({timeframe}) range: {oos_start_kst} ~ {oos_end_kst}, rows={len(df_oos)}")
 
-    # 1) Buy & Hold (OOS)
+    # 1) Buy & Hold (항상 매수) 백테스트
     bh_signals = [1] * len(df_oos)
     bh_result = run_backtest(
         df=df_oos,
@@ -67,139 +122,85 @@ def run_oos(
         timeframe=timeframe
     )
 
-    # is_rows 중 B/H 항목(used_indicators="Buy and Hold")에 OOS 결과 반영
-    for row in is_rows:
-        tf_str = row.get("timeframe", "")
-        used_str = row.get("used_indicators", "")
-        if tf_str == f"{timeframe}(B/H)" and used_str == "Buy and Hold":
-            row["oos_start_cap"] = start_capital
-            row["oos_end_cap"] = bh_score["EndCapital"]
-            row["oos_return"] = bh_score["Return"]
-            row["oos_trades"] = bh_score["Trades"]
-            row["oos_sharpe"] = bh_score["Sharpe"]
-            row["oos_mdd"] = bh_score["MDD"]
-            row["oos_trades_log"] = "N/A"  # B/H는 매매내역 굳이 기록X
-            break
+    # 바이앤홀드 매매 로그
+    bh_trades_log = _record_trades_info(df_oos, bh_result["trades"])
 
-    # 2) is_passed=True인 전략만 OOS 백테스트
-    pass_indices = []
-    for i, row in enumerate(is_rows):
-        if row.get("used_indicators", "") == "Buy and Hold":
-            continue
-        val = row.get("is_passed", "False")
-        # "True" or bool(True) -> 통과
-        is_ok = (val is True) if isinstance(val, bool) else (val.strip().lower() == "true")
-        if is_ok:
-            pass_indices.append(i)
+    bh_row = {
+        "timeframe": f"{timeframe}(B/H)",
+        "oos_start_cap": bh_score["StartCapital"],
+        "oos_end_cap": bh_score["EndCapital"],
+        "oos_return": bh_score["Return"],
+        "oos_trades": bh_score["Trades"],
+        "oos_trades_log": bh_trades_log,
+        "oos_sharpe": bh_score["Sharpe"],
+        "oos_mdd": bh_score["MDD"],
+        "used_indicators": "Buy and Hold"
+    }
 
-    if not pass_indices:
-        # 통과된 전략이 없다면 그대로 반환
-        return is_rows
+    # 2) combos 병렬 백테스트
+    def _process_combo_oos(combo: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        주어진 콤보(복수 지표)로 OOS 구간 백테스트 후 결과(성과 + 매매 로그)를 반환한다.
+        """
+        # 콤보 시그널 생성
+        df_local = create_signals_for_combo(df_oos, combo, out_col="signal_oos_final")
+        signals = df_local["signal_oos_final"].tolist()
 
-    # 병렬 실행
-    results = Parallel(n_jobs=-1, verbose=5)(
-        delayed(_process_oos_row)(idx, is_rows, df_oos, timeframe, start_capital)
-        for idx in pass_indices
+        # buy_time_delay, sell_time_delay, holding_period 추출
+        buy_td = -1
+        sell_td = -1
+        hold_p = 0
+        for cdict in combo:
+            if "buy_time_delay" in cdict:
+                buy_td = cdict["buy_time_delay"]
+            if "sell_time_delay" in cdict:
+                sell_td = cdict["sell_time_delay"]
+            if "holding_period" in cdict:
+                hold_p = cdict["holding_period"]
+
+        # 백테스트 수행
+        engine_out = run_backtest(
+            df=df_local,
+            signals=signals,
+            start_capital=start_capital,
+            allow_short=ALLOW_SHORT,
+            buy_time_delay=buy_td,
+            sell_time_delay=sell_td,
+            holding_period=hold_p
+        )
+        score = calculate_metrics(
+            equity_curve=engine_out["equity_curve"],
+            daily_returns=engine_out["daily_returns"],
+            start_capital=start_capital,
+            trades=engine_out["trades"],
+            timeframe=timeframe
+        )
+
+        # 매매 로그
+        combo_trades_log = _record_trades_info(df_local, engine_out["trades"])
+
+        combo_info = {"timeframe": timeframe, "combo_params": combo}
+        used_str = json.dumps(combo_info, ensure_ascii=False)
+
+        return {
+            "timeframe": timeframe,
+            "oos_start_cap": score["StartCapital"],
+            "oos_end_cap": score["EndCapital"],
+            "oos_return": score["Return"],
+            "oos_trades": score["Trades"],
+            "oos_trades_log": combo_trades_log,
+            "oos_sharpe": score["Sharpe"],
+            "oos_mdd": score["MDD"],
+            "used_indicators": used_str
+        }
+
+    # B/H 결과 먼저 저장
+    results = [bh_row]
+
+    # 병렬 처리로 모든 콤보 실행
+    parallel_out = Parallel(n_jobs=-1, verbose=5)(
+        delayed(_process_combo_oos)(combo) for combo in combos
     )
+    results.extend(parallel_out)
 
-    # 결과 반영
-    for idx, new_row in results:
-        is_rows[idx] = new_row
-
-    return is_rows
-
-
-def _process_oos_row(
-    idx: int,
-    is_rows: List[Dict[str, Any]],
-    df_oos,
-    timeframe: str,
-    start_capital: float
-) -> Tuple[int, Dict[str, Any]]:
-    """
-    is_rows[idx]의 used_indicators(=JSON)에서 콤보 파라미터를 파싱 후,
-    df_oos 구간에 대해 백테스트. 그 결과를 oos_* 컬럼에 기록.
-    """
-    row_copy = dict(is_rows[idx])  # 원본 손상 방지
-    used_str = row_copy.get("used_indicators", "")
-
-    try:
-        combo_info = json.loads(used_str)
-    except json.JSONDecodeError:
-        # JSON 형식이 아니면 OOS 불가
-        return idx, row_copy
-
-    allow_short_oos = combo_info.get("allow_short", ALLOW_SHORT)
-    combo_params = combo_info.get("combo_params", [])
-
-    # 시그널 생성(Out-of-Sample 용)
-    # out_col="signal_oos_final"로 OOS 시그널만 별도 저장
-    df_local = df_oos.copy()
-    df_local = create_signals_for_combo(
-        df_local,
-        combo_params,
-        out_col="signal_oos_final"
-    )
-    signals = df_local["signal_oos_final"].tolist()
-
-    # 백테스트
-    engine_out = run_backtest(
-        df=df_local,
-        signals=signals,
-        start_capital=start_capital,
-        allow_short=allow_short_oos
-    )
-    score = calculate_metrics(
-        equity_curve=engine_out["equity_curve"],
-        daily_returns=engine_out["daily_returns"],
-        start_capital=start_capital,
-        trades=engine_out["trades"],
-        timeframe=timeframe
-    )
-
-    # 매매내역 요약
-    trades_log = _record_trades_info(df_local, engine_out["trades"])
-
-    # oos_* 칼럼에 기록
-    row_copy["oos_start_cap"] = start_capital
-    row_copy["oos_end_cap"] = score["EndCapital"]
-    row_copy["oos_return"] = score["Return"]
-    row_copy["oos_trades"] = score["Trades"]
-    row_copy["oos_sharpe"] = score["Sharpe"]
-    row_copy["oos_mdd"] = score["MDD"]
-    row_copy["oos_trades_log"] = trades_log
-
-    return idx, row_copy
-
-
-def _record_trades_info(df, trades: List[Dict[str, Any]]) -> str:
-    """
-    OOS 구간에서 발생한 트레이드 목록을 문자열로 요약 반환.
-    (entry, exit를 KST로 변환해 표시)
-    """
-    if not trades:
-        return "No Trades"
-
-    logs = []
-    for i, t in enumerate(trades, start=1):
-        e_idx = t.get("entry_index", None)
-        x_idx = t.get("exit_index", None)
-        ptype = t.get("position_type", "N/A")
-
-        # entry 시각 KST 변환
-        if isinstance(e_idx, int) and 0 <= e_idx < len(df):
-            ms_val = df.iloc[e_idx]["open_time"]
-            entry_ot = ms_to_kst_str(ms_val)
-        else:
-            entry_ot = "N/A"
-
-        # exit 시각 KST 변환
-        if isinstance(x_idx, int) and 0 <= x_idx < len(df):
-            ms_val_exit = df.iloc[x_idx]["open_time"]
-            exit_ot = ms_to_kst_str(ms_val_exit)
-        else:
-            exit_ot = "End"
-
-        logs.append(f"[{i}] {ptype.upper()} Entry={entry_ot}, Exit={exit_ot}")
-
-    return "; ".join(logs)
+    return results

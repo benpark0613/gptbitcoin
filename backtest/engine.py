@@ -1,62 +1,72 @@
 # gptbitcoin/backtest/engine.py
-# 전량 매수·매도, ISOLATED 마진, ALLOW_SHORT 사용 등 보완사항 반영
+# 최소한의 한글 주석, 구글 스타일 docstring
+# 매수/매도 신호 지연(buy_time_delay, sell_time_delay), 포지션 보유(holding_period) 로직이 포함된 백테스트 엔진
 
 from typing import Dict, Any, List
 import pandas as pd
 
-# config.py 설정값 불러오기
-from config.config import (
-    COMMISSION_RATE,
-    SLIPPAGE_RATE,
-    START_CAPITAL,
-    ALLOW_SHORT,
-    LEVERAGE,
-    MARGIN_TYPE
-)
 
 def run_backtest(
     df: pd.DataFrame,
     signals: List[int],
-    start_capital: float = START_CAPITAL,
-    allow_short: bool = ALLOW_SHORT,
-    leverage: float = LEVERAGE,
-    margin_type: str = MARGIN_TYPE
+    start_capital: float = 100_000.0,
+    allow_short: bool = True,
+    leverage: float = 1.0,
+    margin_type: str = "ISOLATED",
+    commission_rate: float = 0.0004,
+    slippage_rate: float = 0.0002,
+    buy_time_delay: int = 0,
+    sell_time_delay: int = 0,
+    holding_period: int = 0
 ) -> Dict[str, Any]:
     """
-    전량 매수·매도 방식의 간단 백테스트 엔진.
-    ISOLATED 마진, 레버리지, 숏(ALLOW_SHORT) 사용 가능.
+    백테스트 엔진:
+      - 매수/매도 신호 지연 로직을 별도 적용:
+        * buy_time_delay: 매수 신호가 나온 뒤 지정된 봉 수만큼 동일한 신호가 지속되면 진입
+        * sell_time_delay: 매도 신호가 나온 뒤 지정된 봉 수만큼 동일한 신호가 지속되면 진입
+      - holding_period: 포지션 진입 후 일정 봉만큼은 유지(0이면 제약 없음)
+      - 나머지 로직(수수료, 슬리피지, 레버리지, 숏 진입 등)은 전량 매수/매도 방식으로 처리
 
     Args:
-        df (pd.DataFrame): 'close' 칼럼 포함된 시계열 데이터.
-        signals (List[int]): 각 시점의 매매 시그널. +1(매수), -1(매도), 0(관망).
-        start_capital (float, optional): 초기 자본.
-        allow_short (bool, optional): True면 숏 진입 가능.
-        leverage (float, optional): 레버리지 배수.
-        margin_type (str, optional): "ISOLATED" (단일 포지션 마진).
-                                     본 코드에서는 ISOLATED만 테스트.
+        df (pd.DataFrame): 'close' 칼럼이 포함된 가격 시계열 (len(df) == len(signals) 가정)
+        signals (List[int]): 각 시점의 매매 신호 (-1: 매도, 0: 관망, +1: 매수)
+        start_capital (float, optional): 초기 자본
+        allow_short (bool, optional): True면 숏 포지션 허용
+        leverage (float, optional): 레버리지 배수
+        margin_type (str, optional): "ISOLATED"만 가정
+        commission_rate (float, optional): 진입/청산 시 왕복 수수료율
+        slippage_rate (float, optional): 슬리피지 비율
+        buy_time_delay (int, optional): 매수 신호 지연 봉 수
+        sell_time_delay (int, optional): 매도 신호 지연 봉 수
+        holding_period (int, optional): 포지션 유지 봉 수 (0이면 무제한)
 
     Returns:
         Dict[str, Any]: {
             "equity_curve": List[float],   # 각 시점별 평가자산
-            "daily_returns": List[float],  # 각 시점별 일일수익률
-            "trades": List[dict]          # 트레이드 내역
+            "daily_returns": List[float],  # 각 시점별 수익률
+            "trades": List[dict]           # 체결된 매매 내역
         }
     """
     if df.empty:
-        raise ValueError("DataFrame is empty.")
+        raise ValueError("DataFrame이 비어 있습니다.")
     if "close" not in df.columns:
         raise ValueError("DataFrame에 'close' 칼럼이 필요합니다.")
     if len(df) != len(signals):
-        raise ValueError("df 길이와 signals 길이가 일치하지 않습니다.")
+        raise ValueError("df 길이와 signals 길이가 불일치.")
+
     if margin_type.upper() != "ISOLATED":
-        # 여기서는 ISOLATED만 가정(강제청산 등은 별도 고려 안 함)
-        print("[주의] 본 백테스트는 ISOLATED만 테스트합니다.")
+        print("[주의] run_backtest: margin_type='ISOLATED'만 가정합니다.")
 
     capital = start_capital
-    position = 0      # 0=무포지션, 1=롱, -1=숏
+    position = 0    # 0: 무포지션, +1: 롱, -1: 숏
+    position_size = 0.0
     entry_price = 0.0
     entry_index = None
-    position_size = 0.0  # 레버리지를 고려한 포지션 수량
+
+    # 포지션 보유, 딜레이 관련 상태
+    last_raw_signal = 0
+    raw_signal_count = 0
+    bars_held = 0
 
     equity_curve = []
     daily_returns = []
@@ -65,102 +75,123 @@ def run_backtest(
 
     for i in range(len(df)):
         close_price = df.iloc[i]["close"]
-        sig = signals[i]
+        raw_sig = signals[i]
 
-        # 포지션 평가자산 계산(단순 평가)
-        if position == 1:
-            # 롱 포지션인 경우 (exit_price- entry_price) * 수량
-            current_price_eval = close_price  # 평가 시점 가격(슬리피지X)
-            eval_pnl = (current_price_eval - entry_price) * position_size
+        # 현재 포지션 평가자산
+        if position == 1:  # 롱 포지션
+            eval_pnl = (close_price - entry_price) * position_size
             current_equity = capital + eval_pnl
-        elif position == -1:
-            # 숏 포지션인 경우 (entry_price - exit_price) * 수량
-            current_price_eval = close_price
-            eval_pnl = (entry_price - current_price_eval) * position_size
+        elif position == -1:  # 숏 포지션
+            eval_pnl = (entry_price - close_price) * position_size
             current_equity = capital + eval_pnl
         else:
             current_equity = capital
 
-        # 시그널 변동 시 기존 포지션 청산 / 신규 진입
-        if sig != position:
-            # 1) 기존 포지션 청산
-            if position != 0:
-                exit_price = close_price
+        # (A) 포지션 보유 중 => holding_period 체크
+        if position != 0:
+            bars_held += 1
+            can_exit = (holding_period == 0) or (bars_held >= holding_period)
+
+            # 새 신호가 포지션 반대거나 0이면 청산 판단
+            if can_exit:
+                if raw_sig == 0 or raw_sig == -position:
+                    # 청산
+                    exit_price = close_price
+                    trade_type = "long" if position == 1 else "short"
+
+                    # 슬리피지 적용
+                    if position == 1:
+                        exit_price *= (1 - slippage_rate)
+                        pnl = (exit_price - entry_price) * position_size
+                    else:
+                        exit_price *= (1 + slippage_rate)
+                        pnl = (entry_price - exit_price) * position_size
+
+                    # 왕복 수수료
+                    total_price_sum = (entry_price + exit_price) * position_size
+                    commission = total_price_sum * commission_rate
+                    net_pnl = pnl - commission
+
+                    trades.append({
+                        "entry_index": entry_index,
+                        "exit_index": i,
+                        "entry_price": entry_price,
+                        "exit_price": exit_price,
+                        "pnl": net_pnl,
+                        "holding_days": bars_held,
+                        "position_type": trade_type
+                    })
+                    capital += net_pnl
+
+                    # 포지션 해제
+                    position = 0
+                    position_size = 0.0
+                    entry_price = 0.0
+                    entry_index = None
+                    bars_held = 0
+
+                    current_equity = capital
+
+        else:
+            # (B) 포지션이 없는 경우 => buy_time_delay / sell_time_delay 반영
+            # raw_signal_count 업데이트
+            if raw_sig != last_raw_signal:
+                raw_signal_count = 1
+                last_raw_signal = raw_sig
+            else:
+                if raw_sig != 0:
+                    raw_signal_count += 1
+                else:
+                    raw_signal_count = 0
+
+            # 매수/매도 진입 가능 여부
+            if raw_sig > 0:
+                required_delay = buy_time_delay
+            elif raw_sig < 0:
+                required_delay = sell_time_delay
+            else:
+                required_delay = 999999  # 신호가 0이면 진입 불가
+
+            can_enter_long = (raw_sig == 1 and raw_signal_count >= required_delay)
+            can_enter_short = (raw_sig == -1 and raw_signal_count >= required_delay and allow_short)
+
+            if can_enter_long or can_enter_short:
+                position = 1 if can_enter_long else -1
                 trade_type = "long" if position == 1 else "short"
 
-                # 슬리피지 적용(청산 시)
+                real_entry_price = close_price
                 if position == 1:
-                    exit_price *= (1 - SLIPPAGE_RATE)
-                    pnl = (exit_price - entry_price) * position_size
+                    real_entry_price *= (1 + slippage_rate)  # 매수 슬리피지
                 else:
-                    exit_price *= (1 + SLIPPAGE_RATE)
-                    pnl = (entry_price - exit_price) * position_size
+                    real_entry_price *= (1 - slippage_rate)  # 매도 슬리피지
 
-                # 왕복 수수료(진입+청산 가격 합 × 수량 × 커미션)
-                # entry_price, exit_price는 이미 슬리피지 반영된 가격
-                total_price_sum = (entry_price + exit_price) * position_size
-                commission = total_price_sum * COMMISSION_RATE
-                net_pnl = pnl - commission
-
-                holding_days = (i - entry_index) if entry_index is not None else 1
-                trades.append({
-                    "entry_index": entry_index,
-                    "exit_index": i,
-                    "entry_price": entry_price,
-                    "exit_price": exit_price,
-                    "pnl": net_pnl,
-                    "holding_days": holding_days,
-                    "position_type": trade_type
-                })
-                capital += net_pnl
-
-            # 2) 새 포지션 진입(롱 or 숏)
-            if sig == 1:
-                position = 1
-                # 진입 시 슬리피지 반영
-                real_entry_price = close_price * (1 + SLIPPAGE_RATE)
-                # 레버리지 고려, 전액 진입 => capital * leverage / 진입가격 = 수량
                 position_size = (capital * leverage) / real_entry_price
                 entry_price = real_entry_price
                 entry_index = i
-            elif sig == -1 and allow_short:
-                position = -1
-                real_entry_price = close_price * (1 - SLIPPAGE_RATE)
-                position_size = (capital * leverage) / real_entry_price
-                entry_price = real_entry_price
-                entry_index = i
-            else:
-                # 포지션 청산 후, 새로 진입하지 않음
-                position = 0
-                position_size = 0.0
-                entry_price = 0.0
-                entry_index = None
+                bars_held = 0
 
-            current_equity = capital
-
-        # 일별 수익률 계산
-        ret = (current_equity - prev_equity) / prev_equity if prev_equity != 0 else 0.0
+        # (C) 일일 수익률(단순 수익률)
+        ret = (current_equity - prev_equity) / prev_equity if prev_equity else 0.0
         daily_returns.append(ret)
         equity_curve.append(current_equity)
         prev_equity = current_equity
 
-    # 루프가 끝난 뒤, 포지션이 남아있으면 마지막 봉에서 청산
+    # (D) 루프 종료 후 포지션 남았다면 마지막 봉에서 청산
     if position != 0:
         final_idx = len(df) - 1
         final_close = df.iloc[final_idx]["close"]
 
         if position == 1:
-            final_close *= (1 - SLIPPAGE_RATE)
+            final_close *= (1 - slippage_rate)
             pnl = (final_close - entry_price) * position_size
         else:
-            final_close *= (1 + SLIPPAGE_RATE)
+            final_close *= (1 + slippage_rate)
             pnl = (entry_price - final_close) * position_size
 
         total_price_sum = (entry_price + final_close) * position_size
-        commission = total_price_sum * COMMISSION_RATE
+        commission = total_price_sum * commission_rate
         net_pnl = pnl - commission
         trade_type = "long" if position == 1 else "short"
-        holding_days = (final_idx - entry_index) + 1 if entry_index is not None else 1
 
         trades.append({
             "entry_index": entry_index,
@@ -168,12 +199,11 @@ def run_backtest(
             "entry_price": entry_price,
             "exit_price": final_close,
             "pnl": net_pnl,
-            "holding_days": holding_days,
+            "holding_days": bars_held + 1,
             "position_type": trade_type
         })
         capital += net_pnl
 
-        # 마지막 수익률 갱신
         ret = (capital - prev_equity) / prev_equity if prev_equity != 0 else 0.0
         daily_returns[-1] = ret
         equity_curve[-1] = capital

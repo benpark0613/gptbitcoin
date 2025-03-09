@@ -1,80 +1,86 @@
-# gptbitcoin/utils/indicator_utils.py
-# config의 INDICATOR_CONFIG 값을 참고하여 워밍업 데이터가 몇 개 필요한지 계산하는 모듈
-# 주석은 필요한 한글만, docstring은 구글 스타일
+"""
+indicator_utils.py
 
-def get_required_warmup_bars(cfg: dict) -> int:
+보조지표를 계산하기 위해 필요한 최대 윈도우(봉 개수)를 구하는 함수를 제공한다.
+예:
+    - MA: short_ma_periods, long_ma_periods 중 최댓값
+    - RSI: lookback_periods 중 최댓값
+    - OBV: short_ma_periods, long_ma_periods 중 최댓값
+    - Filter: lookback_periods 중 최댓값
+    - SR: lookback_periods 중 최댓값
+    - CB: lookback_periods 중 최댓값
+"""
+
+from typing import Dict, Any, List
+
+from config.indicator_config import INDICATOR_CONFIG
+
+
+def get_required_warmup_bars(cfg: Dict[str, Any]) -> int:
     """
-    INDICATOR_CONFIG를 입력받아
     보조지표 계산 시 필요한 최대 윈도우(봉 개수)를 찾는다.
+    cfg 인자로 MA, RSI, OBV, Filter, SR, CB 등에 대한 파라미터를 전달받는다.
 
     Args:
-        cfg (dict): config.config의 INDICATOR_CONFIG
+        cfg (dict): 예) indicator_config.py의 INDICATOR_CONFIG
 
     Returns:
-        int: MA, RSI, OBV, Filter, Support/Resistance, Channel_Breakout 등
-             모든 지표에서 요구하는 최대 윈도우(봉) 수
+        int: 필요한 최대 봉 개수
     """
-    candidates = []
+    candidates: List[int] = []
 
-    # MA
+    # MA: 단기 및 장기 이동평균 기간
     if "MA" in cfg:
-        short_list = cfg["MA"].get("short_periods", [])
-        long_list = cfg["MA"].get("long_periods", [])
-        # band_filters는 'window'와 무관
+        short_list = cfg["MA"].get("short_ma_periods", [])
+        long_list = cfg["MA"].get("long_ma_periods", [])
         if short_list or long_list:
             candidates.append(max(short_list + long_list))
 
-    # RSI
+    # RSI: lookback 기간
     if "RSI" in cfg:
-        lengths = cfg["RSI"].get("lengths", [])
-        if lengths:
-            candidates.append(max(lengths))
+        lookback_list = cfg["RSI"].get("lookback_periods", [])
+        if lookback_list:
+            candidates.append(max(lookback_list))
 
-    # OBV
+    # OBV: 단기 및 장기 OBV 이동평균 기간
     if "OBV" in cfg:
-        sp_list = cfg["OBV"].get("short_periods", [])
-        lp_list = cfg["OBV"].get("long_periods", [])
+        sp_list = cfg["OBV"].get("short_ma_periods", [])
+        lp_list = cfg["OBV"].get("long_ma_periods", [])
         if sp_list or lp_list:
             candidates.append(max(sp_list + lp_list))
 
-    # Filter
+    # Filter: lookback 기간
     if "Filter" in cfg:
-        windows = cfg["Filter"].get("windows", [])
-        if windows:
-            candidates.append(max(windows))
+        lookback_list = cfg["Filter"].get("lookback_periods", [])
+        if lookback_list:
+            candidates.append(max(lookback_list))
 
-    # Support/Resistance
-    if "Support_Resistance" in cfg:
-        sr_windows = cfg["Support_Resistance"].get("windows", [])
-        if sr_windows:
-            candidates.append(max(sr_windows))
+    # SR (Support/Resistance): lookback 기간
+    if "SR" in cfg:
+        lookback_list = cfg["SR"].get("lookback_periods", [])
+        if lookback_list:
+            candidates.append(max(lookback_list))
 
-    # Channel_Breakout
-    if "Channel_Breakout" in cfg:
-        ch_windows = cfg["Channel_Breakout"].get("windows", [])
-        if ch_windows:
-            candidates.append(max(ch_windows))
+    # CB (Channel Breakout): lookback 기간
+    if "CB" in cfg:
+        lookback_list = cfg["CB"].get("lookback_periods", [])
+        if lookback_list:
+            candidates.append(max(lookback_list))
 
     if not candidates:
         return 0
-
     return max(candidates)
 
 
 def main():
     """
-    INDICATOR_CONFIG를 가져와서
-    워밍업 데이터가 몇 개 필요한지 테스트 출력
+    테스트용 main 함수:
+    indicator_config.py의 INDICATOR_CONFIG를 불러와
+    필요한 워밍업 봉 수를 계산 후 출력한다.
     """
-    # config 불러오기
-    try:
-        from config.config import INDICATOR_CONFIG
-    except ImportError:
-        print("config.py에서 INDICATOR_CONFIG를 가져오지 못했습니다.")
-        return
+    needed = get_required_warmup_bars(INDICATOR_CONFIG)
+    print(f"[indicator_utils] 워밍업에 필요한 최대 봉 수: {needed}")
 
-    needed_bars = get_required_warmup_bars(INDICATOR_CONFIG)
-    print(f"[indicator_utils] 워밍업에 필요한 최소 봉 수: {needed_bars}")
 
 if __name__ == "__main__":
     main()
