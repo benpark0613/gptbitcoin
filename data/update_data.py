@@ -18,40 +18,24 @@ utils/db_utils.py의 함수들을 호출해 DB에 INSERT 한다.
 - DELETE → INSERT 로직을 통해 중복을 방지한다.
 """
 
+import datetime
 import sqlite3
 import sys
-import datetime
-import pytz
 from datetime import timedelta
 
-# fetch_data.py에서 데이터 수집 함수 임포트
-try:
-    from data.fetch_data import get_ohlcv_from_binance
-except ImportError:
-    print("fetch_data.py를 찾을 수 없거나 경로 설정이 잘못되었습니다.")
-    sys.exit(1)
+import pytz
 
-# config.py에서 DB 관련 설정값 로드
-try:
-    from config.config import (
-        DB_PATH,
-        DB_BOUNDARY_DATE,
-    )
-except ImportError:
-    print("config.py를 찾을 수 없거나 경로 설정이 잘못되었습니다.")
-    sys.exit(1)
-
-# DB 관련 유틸 함수 임포트
-try:
-    from utils.db_utils import (
-        connect_db,
-        init_db,
-        delete_ohlcv,
-        insert_ohlcv,
-    )
-except ImportError:
-    print("db_utils.py를 찾을 수 없거나 경로 설정이 잘못되었습니다.")
-    sys.exit(1)
+from config.config import (
+    DB_PATH,
+    DB_BOUNDARY_DATE,
+)
+from data.fetch_data import get_ohlcv_from_binance
+from utils.db_utils import (
+    connect_db,
+    init_db,
+    delete_ohlcv,
+    insert_ohlcv,
+)
 
 
 def update_data_db(

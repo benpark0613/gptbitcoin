@@ -5,7 +5,6 @@ Collector 단계에서 이미 결측치가 제거된 OHLCV 데이터에 대해
 (보조지표 계산은 indicators/ 폴더에서 수행)
 """
 
-import sys
 import pandas as pd
 
 def clean_ohlcv(df: pd.DataFrame) -> pd.DataFrame:

@@ -5,18 +5,14 @@ from typing import Dict, Any, List
 import pandas as pd
 
 # config.py 설정값 불러오기
-try:
-    from config.config import (
-        COMMISSION_RATE,
-        SLIPPAGE_RATE,
-        START_CAPITAL,
-        ALLOW_SHORT,
-        LEVERAGE,
-        MARGIN_TYPE
-    )
-except ImportError:
-    raise ImportError("config.py에서 필요한 설정값을 가져올 수 없습니다.")
-
+from config.config import (
+    COMMISSION_RATE,
+    SLIPPAGE_RATE,
+    START_CAPITAL,
+    ALLOW_SHORT,
+    LEVERAGE,
+    MARGIN_TYPE
+)
 
 def run_backtest(
     df: pd.DataFrame,

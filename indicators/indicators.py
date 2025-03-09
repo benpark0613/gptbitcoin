@@ -2,6 +2,7 @@
 # 구글 스타일, 최소한의 한글 주석
 
 import pandas as pd
+
 from config.config import INDICATOR_CONFIG
 
 

@@ -3,8 +3,8 @@
 # 컬럼 이름은 현재 지표 계산 로직(calc_all_indicators)에서 만드는 형식에 맞춤
 # 시그널은 단순 합산하여 +면 매수(1), -면 매도(-1), 0이면 관망(0)
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
 def ma_crossover_signal(
@@ -225,31 +225,3 @@ def combine_signals(
     df.loc[sum_series < 0, out_col] = -1
     # sum_series == 0 이면 관망(0)
     return df
-
-
-if __name__ == "__main__":
-    # 간단 예시 테스트
-    data = {
-        "close": [100, 102, 101, 105, 110],
-        "ma_5": [np.nan, np.nan, np.nan, np.nan, 103],
-        "ma_20": [np.nan, np.nan, np.nan, np.nan, 108],
-        "rsi_14": [np.nan, 35, 40, 75, 25],
-        "obv": [0, 1, 2, 1, 3],
-    }
-    df_test = pd.DataFrame(data)
-
-    # MA 시그널
-    df_test = ma_crossover_signal(df_test, short_ma_col="ma_5", long_ma_col="ma_20")
-    print("MA 시그널:", df_test["signal_ma"].tolist())
-
-    # RSI 시그널
-    df_test = rsi_signal(df_test, rsi_col="rsi_14", lower_bound=30, upper_bound=70)
-    print("RSI 시그널:", df_test["signal_rsi"].tolist())
-
-    # OBV 시그널
-    df_test = obv_signal(df_test, obv_col="obv", threshold=1.0)
-    print("OBV 시그널:", df_test["signal_obv"].tolist())
-
-    # 시그널 합치기
-    df_test = combine_signals(df_test, ["signal_ma", "signal_rsi", "signal_obv"], out_col="signal_final")
-    print("최종 시그널:", df_test["signal_final"].tolist())

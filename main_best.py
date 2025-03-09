@@ -1,273 +1,252 @@
 # gptbitcoin/main_best.py
-# 구글 스타일 docstring, 최소한의 한글 주석
-# 특정 combo_info(used_indicators)를 이용해 단일 백테스트.
-# main.py와 동일한 방식으로 DB 커버리지, 워밍업, 지표계산을 수행.
+# 5분마다 특정 콤보 + 바이앤홀드(B/H) 백테스트를 반복 수행
+# 콘솔에는 콤보 트레이드 로그, B/H는 요약 성과만 출력
+# prepare_ohlcv_with_warmup 함수를 통해
+# 워밍업 계산 + 조회 시점 조정 + DB에서 old_data+recent_data 병합 로딩을 한 번에 처리.
 
-import sys
-import os
+import time
+import schedule
+import platform
 import datetime
 import pytz
 import pandas as pd
-from datetime import timedelta
+from typing import Optional, Dict, Any
 
 try:
-    from config.config import (
-        SYMBOL,
-        START_DATE,
-        END_DATE,
-        DB_BOUNDARY_DATE,
-        EXCHANGE_OPEN_DATE,
-        LOG_LEVEL,
-        RESULTS_DIR,
-        INDICATOR_CONFIG
-    )
+    from win10toast import ToastNotifier
+    _WINDOWS_TOAST_AVAILABLE = True
 except ImportError:
-    print("[main_best.py] config.py import 실패")
-    sys.exit(1)
+    # Windows 환경이 아니거나 win10toast 패키지가 없는 경우
+    _WINDOWS_TOAST_AVAILABLE = False
 
-# DB, 전처리
-try:
-    from utils.db_utils import connect_db, init_db
-    from data.update_data import update_data_db
-    from data.preprocess import clean_ohlcv, merge_old_recent
-except ImportError:
-    print("[main_best.py] DB/전처리 모듈 import 에러")
-    sys.exit(1)
+# 프로젝트 설정값
+from config.config import (
+    SYMBOL,
+    START_DATE,
+    DB_BOUNDARY_DATE,
+    EXCHANGE_OPEN_DATE,
+    INDICATOR_CONFIG,
+    DB_PATH
+)
 
-# 보조지표, 워밍업
-try:
-    from indicators.indicators import calc_all_indicators
-    from utils.indicator_utils import get_required_warmup_bars
-except ImportError:
-    print("[main_best.py] indicators/indicator_utils import 에러")
-    sys.exit(1)
+# DB 업데이트(바이낸스 선물 API 수집 후 저장)
+from data.update_data import update_data_db
 
-# 단일 콤보 백테스트
-try:
-    from backtest.run_best import run_best_single
-except ImportError:
-    print("[main_best.py] run_best.py import 에러")
-    sys.exit(1)
+# 전처리(NaN/이상치 검사)
+from data.preprocess import clean_ohlcv
 
-def _get_time_delta_for_tf(tf_str: str) -> datetime.timedelta:
+# 지표 계산
+from indicators.indicators import calc_all_indicators
+
+# 지표 파라미터(워밍업 봉 계산)
+from utils.indicator_utils import get_required_warmup_bars
+
+# DB 유틸 - prepare_ohlcv_with_warmup
+from utils.db_utils import prepare_ohlcv_with_warmup
+
+# 콤보 + B/H 백테스트
+from backtest.run_best import run_best_single
+
+_previous_position: Optional[str] = None  # 직전 콤보 포지션 추적
+
+
+def _show_windows_toast(title: str, msg: str, duration_sec: int = 10):
     """
-    타임프레임 문자열("1d","4h","15m")을 timedelta로 변환.
+    Windows 10 환경이면 토스트 알림, 그 외에는 콘솔에 대체 출력.
     """
-    tf_lower = tf_str.lower()
-    if tf_lower.endswith("d"):
-        d_val = int(tf_lower.replace("d", "")) if tf_lower.replace("d", "").isdigit() else 1
-        return timedelta(days=d_val)
-    elif tf_lower.endswith("h"):
-        h_val = int(tf_lower.replace("h", "")) if tf_lower.replace("h", "").isdigit() else 1
-        return timedelta(hours=h_val)
-    elif tf_lower.endswith("m"):
-        m_val = int(tf_lower.replace("m", "")) if tf_lower.replace("m", "").isdigit() else 1
-        return timedelta(minutes=m_val)
+    if platform.system().lower().startswith("win") and _WINDOWS_TOAST_AVAILABLE:
+        toaster = ToastNotifier()
+        toaster.show_toast(
+            title=title,
+            msg=msg,
+            duration=duration_sec,
+            threaded=True
+        )
     else:
-        return timedelta(days=1)
+        print(f"[TOAST] {title}: {msg}")
 
 
-def ensure_recent_coverage(symbol: str, timeframe: str, start_date: str, end_date: str) -> None:
+def notify_user(message: str):
     """
-    main.py와 동일한 로직으로, (start_date~end_date) 구간의 recent_data가 충분한지 확인.
-    부족하면 update_data_db(recent)로 갱신.
+    콘솔 출력 + (Windows 10 + win10toast 지원 시) Toast 알림
     """
-    from config.config import DB_PATH, DB_BOUNDARY_DATE
-    import sqlite3
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    full_msg = f"{now_str} - {message}"
+    print(f"[ALERT] {full_msg}")
+    _show_windows_toast("백테스트 알림", message, duration_sec=15)
 
-    dt_format = "%Y-%m-%d %H:%M:%S"
-    utc = pytz.utc
 
-    naive_start = datetime.datetime.strptime(start_date, dt_format)
-    start_utc = utc.localize(naive_start)
-    start_ms = int(start_utc.timestamp() * 1000)
+def main_loop(
+    timeframe: str,
+    combo_info: Dict[str, Any],
+    alert_on_same_position: bool
+):
+    """
+    주기적으로 실행할 주요 함수:
+      1) DB_BOUNDARY_DATE ~ 현재 UTC 구간만 recent_data 삭제 후 재수집
+      2) prepare_ohlcv_with_warmup 함수로 old_data+recent_data 병합 로딩(워밍업 처리)
+      3) clean_ohlcv + 보조지표 계산 + 백테스트 구간 필터링
+      4) 콤보 + B/H 백테스트
+      5) 콘솔 출력(콤보는 트레이드 로그, B/H는 요약)
+      6) 직전 포지션 대비 변경 시 notify_user
+    """
+    global _previous_position
 
-    naive_end = datetime.datetime.strptime(end_date, dt_format)
-    end_utc = utc.localize(naive_end)
-    end_ms = int(end_utc.timestamp() * 1000)
+    # 현재 UTC 시각
+    now_utc = datetime.datetime.utcnow()
+    now_utc_str = now_utc.strftime("%Y-%m-%d %H:%M:%S")
 
-    naive_bound = datetime.datetime.strptime(DB_BOUNDARY_DATE, dt_format)
-    bound_utc = utc.localize(naive_bound)
-    boundary_ts = int(bound_utc.timestamp() * 1000)
+    # 콘솔용 KST 시각
+    kst_zone = pytz.timezone("Asia/Seoul")
+    now_kst = now_utc.replace(tzinfo=pytz.utc).astimezone(kst_zone)
+    now_kst_str = now_kst.strftime("%Y-%m-%d %H:%M:%S")
 
-    # end_date <= boundary_date => recent_data 필요 없음
-    if end_ms <= boundary_ts:
-        print(f"[main_best.py] recent_data 불필요 (end_date <= boundary_date)")
-        return
+    print(f"\n[main_best] 시작: {now_kst_str} (KST), TF={timeframe}")
 
+    # (1) DB 업데이트 (DB_BOUNDARY_DATE~현재 UTC 구간)
     try:
-        conn = connect_db(DB_PATH)
-        init_db(conn)
-        sql = """
-            SELECT COUNT(*) AS c
-              FROM recent_data
-             WHERE symbol=?
-               AND timeframe=?
-               AND open_time >= ?
-               AND open_time <= ?
-        """
-        df_count = pd.read_sql_query(sql, conn, params=(symbol, timeframe, start_ms, end_ms))
-        conn.close()
-    except sqlite3.Error as e:
-        print(f"[main_best.py] ensure_recent_coverage DB 에러: {e}")
+        update_data_db(
+            symbol=SYMBOL,
+            timeframe=timeframe,
+            start_str=DB_BOUNDARY_DATE,  # UTC
+            end_str=now_utc_str,         # UTC
+            update_mode="recent"
+        )
+        print("[main_best] DB 업데이트 완료.")
+    except Exception as e:
+        notify_user(f"[main_best] DB 업데이트 실패: {e}")
         return
 
-    cnt_val = df_count.iloc[0]["c"]
-    if cnt_val == 0:
-        print(f"[main_best.py] recent_data {timeframe} 구간 {start_date}~{end_date} 없음 => update_data_db(recent)")
-        try:
-            update_data_db(symbol, timeframe, start_date, end_date, update_mode="recent")
-        except Exception as err:
-            print(f"[main_best.py] update_data_db(recent) 실패: {err}")
-    else:
-        print(f"[main_best.py] recent_data 구간 일부 존재: {cnt_val}봉")
+    # (2) prepare_ohlcv_with_warmup로 DB에서 병합 로딩
+    try:
+        warmup_bars = get_required_warmup_bars(INDICATOR_CONFIG)
+
+        df_merged = prepare_ohlcv_with_warmup(
+            symbol=SYMBOL,
+            timeframe=timeframe,
+            start_utc_str=START_DATE,            # 백테스트 메인 시작(UTC)
+            end_utc_str=now_utc_str,            # 현재 시각(UTC)
+            warmup_bars=warmup_bars,
+            exchange_open_date_utc_str=EXCHANGE_OPEN_DATE,
+            boundary_date_utc_str=DB_BOUNDARY_DATE,
+            db_path=DB_PATH
+        )
+
+        # 전처리(NaN/이상치 검사)
+        df_merged = clean_ohlcv(df_merged)
+        if df_merged.empty:
+            notify_user("[main_best] DF가 비어 있습니다.")
+            return
+
+        # 지표 계산
+        df_ind = calc_all_indicators(df_merged, INDICATOR_CONFIG)
+
+        # 백테스트 구간 필터링(START_DATE ~ 현재 시각)
+        dt_format = "%Y-%m-%d %H:%M:%S"
+        utc = pytz.utc
+
+        naive_start = datetime.datetime.strptime(START_DATE, dt_format)
+        start_utc_dt = utc.localize(naive_start)
+        start_ms = int(start_utc_dt.timestamp() * 1000)
+
+        naive_end = datetime.datetime.strptime(now_utc_str, dt_format)
+        end_utc_dt = utc.localize(naive_end)
+        end_ms = int(end_utc_dt.timestamp() * 1000)
+
+        df_test = df_ind[
+            (df_ind["open_time"] >= start_ms) & (df_ind["open_time"] <= end_ms)
+        ].copy()
+        df_test.reset_index(drop=True, inplace=True)
+
+        if df_test.empty:
+            notify_user("[main_best] 백테스트 구간 DF가 비어 있음.")
+            return
+
+        # (3) 콤보 + B/H 백테스트
+        result = run_best_single(df_test, combo_info)
+        combo_score = result["combo_score"]
+        combo_position = result["combo_position"]
+        combo_trades_log = result["combo_trades_log"]
+        bh_score = result["bh_score"]
+
+        # (4) 콘솔 출력
+        print("[Combo TradesLog]")
+        print(combo_trades_log)
+        print(f"[main_best] (Combo) StartC={combo_score['StartCapital']:.2f}, "
+              f"EndC={combo_score['EndCapital']:.2f}, Return={combo_score['Return']:.4f}, "
+              f"Sharpe={combo_score['Sharpe']:.4f}, Pos={combo_position}")
+
+        print(f"[main_best] (Buy&Hold) StartC={bh_score['StartCapital']:.2f}, "
+              f"EndC={bh_score['EndCapital']:.2f}, Return={bh_score['Return']:.4f}, "
+              f"Sharpe={bh_score['Sharpe']:.4f}")
+
+        # (5) 직전 포지션 대비 변경 체크 -> 알림
+        if _previous_position is None:
+            notify_user(f"첫 실행, 콤보 포지션={combo_position}")
+        else:
+            if combo_position != _previous_position:
+                notify_user(f"포지션 변경! {_previous_position} → {combo_position}")
+            else:
+                if alert_on_same_position:
+                    notify_user(f"포지션 동일, 현재={combo_position}")
+                else:
+                    print(f"[main_best] 콤보 포지션 동일: {_previous_position}")
+
+        _previous_position = combo_position
+
+    except Exception as ex:
+        notify_user(f"[main_best] 처리 중 오류: {ex}")
 
 
-def select_ohlcv(
-    conn,
-    table_name: str,
-    symbol: str,
+def run_main_best_repeated(
     timeframe: str,
-    start_ms: int,
-    end_ms: int
-) -> pd.DataFrame:
+    combo_info: Dict[str, Any],
+    interval_minutes: int,
+    alert_on_same_position: bool
+):
     """
-    DB에서 (symbol, timeframe, open_time in [start_ms, end_ms]) 범위 SELECT
+    interval_minutes 간격으로 main_loop를 반복 실행.
     """
-    sql = f"""
-        SELECT symbol, timeframe, timestamp_kst, open_time,
-               open, high, low, close, volume
-          FROM {table_name}
-         WHERE symbol=?
-           AND timeframe=?
-           AND open_time >= ?
-           AND open_time <= ?
-         ORDER BY open_time ASC
-    """
-    df = pd.read_sql_query(sql, conn, params=(symbol, timeframe, start_ms, end_ms))
-    return df
+    # 최초 1회 즉시 실행
+    main_loop(timeframe, combo_info, alert_on_same_position)
 
-
-def load_and_preprocess_data(
-    symbol: str,
-    timeframe: str,
-    start_date: str,
-    boundary_date: str,
-    end_date: str,
-    warmup_bars: int
-) -> pd.DataFrame:
-    """
-    main.py와 동일하게 DB에서 old_data+recent_data를 합쳐 전처리한다.
-    (clean_ohlcv, merge_old_recent)
-    """
-    from config.config import DB_PATH, EXCHANGE_OPEN_DATE
-    dt_format = "%Y-%m-%d %H:%M:%S"
-    utc = pytz.utc
-
-    naive_start = datetime.datetime.strptime(start_date, dt_format)
-    main_start_dt = utc.localize(naive_start)
-
-    naive_boundary = datetime.datetime.strptime(boundary_date, dt_format)
-    boundary_dt = utc.localize(naive_boundary)
-
-    naive_end = datetime.datetime.strptime(end_date, dt_format)
-    end_dt = utc.localize(naive_end)
-
-    naive_exch_open = datetime.datetime.strptime(EXCHANGE_OPEN_DATE, dt_format)
-    exch_open_utc = utc.localize(naive_exch_open)
-
-    delta_per_bar = _get_time_delta_for_tf(timeframe)
-    warmup_delta = delta_per_bar * warmup_bars
-
-    warmup_start_dt = main_start_dt - warmup_delta
-    if warmup_start_dt < exch_open_utc:
-        warmup_start_dt = exch_open_utc
-
-    warmup_start_ms = int(warmup_start_dt.timestamp() * 1000)
-    boundary_ms = int(boundary_dt.timestamp() * 1000)
-    end_ms = int(end_dt.timestamp() * 1000)
-
-    conn = connect_db(DB_PATH)
-    init_db(conn)
-
-    df_old = select_ohlcv(conn, "old_data", symbol, timeframe, warmup_start_ms, boundary_ms - 1)
-    df_recent = select_ohlcv(conn, "recent_data", symbol, timeframe, boundary_ms, end_ms)
-    conn.close()
-
-    df_old = clean_ohlcv(df_old)
-    df_recent = clean_ohlcv(df_recent)
-    merged = merge_old_recent(df_old, df_recent)
-    return merged
-
-
-def main():
-    """
-    main.py와 유사하게 DB 데이터 로드/전처리 후,
-    특정 combo_info만 run_best_single로 백테스트.
-    """
-
-    print(f"[main_best.py] Start - SYMBOL={SYMBOL}, LOG_LEVEL={LOG_LEVEL}")
-
-    # combo_info 예시 (main.py에서 만든 used_indicators JSON을 붙여넣기)
-    combo_info = {
-        "timeframe": "15m",
-        "combo_params": [
-            {"type": "MA", "short_period": 20, "long_period": 50, "band_filter": 0.0},
-            {"type": "RSI", "length": 30, "overbought": 80, "oversold": 30}
-        ]
-    }
-
-    timeframe = combo_info["timeframe"]
-
-    # 1) coverage
-    ensure_recent_coverage(SYMBOL, timeframe, START_DATE, END_DATE)
-
-    # 2) warmup_bars
-    warmup_bars = get_required_warmup_bars(INDICATOR_CONFIG)
-    print(f"[main_best.py] warmup_bars={warmup_bars}")
-
-    # 3) DB에서 구간 로드 + 전처리
-    df_merged = load_and_preprocess_data(
-        symbol=SYMBOL,
+    schedule.every(interval_minutes).minutes.do(
+        main_loop,
         timeframe=timeframe,
-        start_date=START_DATE,
-        boundary_date=DB_BOUNDARY_DATE,
-        end_date=END_DATE,
-        warmup_bars=warmup_bars
+        combo_info=combo_info,
+        alert_on_same_position=alert_on_same_position
     )
-    if df_merged.empty:
-        print("[main_best.py] df_merged 비어 있음. 종료.")
-        return
 
-    print(f"[main_best.py] merged rows={len(df_merged)}")
-
-    # 4) 지표 계산
-    df_ind = calc_all_indicators(df_merged, INDICATOR_CONFIG)
-
-    # 5) 백테스트 범위 필터 (START_DATE~END_DATE)
-    dt_format = "%Y-%m-%d %H:%M:%S"
-    utc = pytz.utc
-
-    naive_s = datetime.datetime.strptime(START_DATE, dt_format)
-    s_utc = utc.localize(naive_s)
-    s_ms = int(s_utc.timestamp() * 1000)
-
-    naive_e = datetime.datetime.strptime(END_DATE, dt_format)
-    e_utc = utc.localize(naive_e)
-    e_ms = int(e_utc.timestamp() * 1000)
-
-    df_test = df_ind[(df_ind["open_time"] >= s_ms) & (df_ind["open_time"] <= e_ms)].copy()
-    df_test.reset_index(drop=True, inplace=True)
-
-    if df_test.empty:
-        print("[main_best.py] df_test 비어 있음. 종료.")
-        return
-
-    # 6) 단일 콤보 백테스트
-    run_best_single(df_test, combo_info)
-
-    print("[main_best.py] 완료.")
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
 
 
 if __name__ == "__main__":
-    main()
+    """
+    사용자 설정:
+      - TIMEFRAME
+      - 콤보 파라미터(MY_COMBO_INFO)
+      - INTERVAL_MINUTES
+      - ALERT_ON_SAME_POSITION
+    """
+    TIMEFRAME = "15m"
+    MY_COMBO_INFO = {
+        "timeframe": TIMEFRAME,
+        "combo_params": [
+            {"type": "RSI", "length": 21, "overbought": 80, "oversold": 20},
+            {"type": "Filter", "window": 20, "x_pct": 0.05, "y_pct": 0.1},
+            {"type": "Support_Resistance", "window": 20, "band_pct": 0.02}
+        ]
+    }
+    INTERVAL_MINUTES = 5
+    ALERT_ON_SAME_POSITION = False
+
+    print(f"[main_best] 스크립트 시작. TF={TIMEFRAME}, interval={INTERVAL_MINUTES}분")
+
+    run_main_best_repeated(
+        timeframe=TIMEFRAME,
+        combo_info=MY_COMBO_INFO,
+        interval_minutes=INTERVAL_MINUTES,
+        alert_on_same_position=ALERT_ON_SAME_POSITION
+    )

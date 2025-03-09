@@ -5,20 +5,16 @@ NaN(결측치)이 하나라도 발견되면 예외를 발생시킨다.
 (입력 파라미터인 start_time, end_time은 모두 UTC 기준 문자열로 가정한다.)
 """
 
-import sys
 import datetime
-import pytz
+
 import pandas as pd
+import pytz
 from binance.client import Client
 
-try:
-    from config.config import (
-        BINANCE_API_KEY,
-        BINANCE_SECRET_KEY,
-    )
-except ImportError:
-    print("config.py를 찾을 수 없거나 경로 설정이 잘못되었습니다.")
-    sys.exit(1)
+from config.config import (
+    BINANCE_API_KEY,
+    BINANCE_SECRET_KEY,
+)
 
 # 바이낸스 선물 API는 최대 1500봉(batch)만 요청 가능
 BATCH_LIMIT = 1500

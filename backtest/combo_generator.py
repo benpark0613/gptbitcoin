@@ -5,10 +5,8 @@
 import itertools
 from typing import List, Dict
 
-try:
-    from config.config import INDICATOR_COMBO_SIZES, INDICATOR_CONFIG
-except ImportError:
-    raise ImportError("config.py에서 INDICATOR_COMBO_SIZES, INDICATOR_CONFIG를 가져올 수 없습니다.")
+
+from config.config import INDICATOR_COMBO_SIZES, INDICATOR_CONFIG
 
 
 def get_ma_param_dicts(ma_config: dict) -> List[dict]:

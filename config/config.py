@@ -21,12 +21,12 @@ LEVERAGE = 1              # 레버리지 배수
 ALLOW_SHORT = True        # 공매도(Short) 허용 여부
 COMMISSION_RATE = 0.0004  # 백테스트 시 커미션 비율
 SLIPPAGE_RATE = 0.0002    # 백테스트 시 슬리피지 비율
-START_CAPITAL = 1_000_000 # 백테스트 시작 자본
+START_CAPITAL = 100_000 # 백테스트 시작 자본
 
 # 심볼, 타임프레임
 SYMBOL = "BTCUSDT"        # 기본 심볼
 # TIMEFRAMES = ["1d", "4h", "1h", "15m"]  # 사용할 타임프레임 목록
-TIMEFRAMES = ["15m"]  # 사용할 타임프레임 목록
+TIMEFRAMES = ["1d"]  # 사용할 타임프레임 목록
 
 # 바이낸스 비트코인 선물 오픈일 (API 요청 시 구간 참조)
 EXCHANGE_OPEN_DATE = "2019-09-08 00:00:00"
@@ -42,23 +42,23 @@ DB_BOUNDARY_DATE = "2025-01-01 00:00:00"
 #   백테스트 시점에서 IS/OOS 분할을 할지 말지를 결정하는 플래그.
 #   - True  => 인샘플(IS)과 아웃샘플(OOS)로 데이터를 나눈 뒤, run_is → run_oos 실행
 #   - False => 데이터를 한 덩어리(단일 기간)로만 백테스트 (IS/OOS 구분 안 함)
-USE_IS_OOS = False
+USE_IS_OOS = True
 
 # IS_OOS_BOUNDARY_DATE:
 #   백테스트 시점에서 인-샘플(IS) 구간과 아웃-오브-샘플(OOS) 구간을 나누는 기준 날짜/시각이다.
 #   예) open_time < IS_OOS_BOUNDARY_DATE => IS 구간
 #       open_time >= IS_OOS_BOUNDARY_DATE => OOS 구간
 #   main.py 등 백테스트 모듈에서 IS/OOS 분리 시 활용한다.
-IS_OOS_BOUNDARY_DATE = "2025-01-01 00:00:00"
+IS_OOS_BOUNDARY_DATE = "2025-03-01 00:00:00"
 
 # 백테스트 전체 기간
-START_DATE = "2025-02-28 00:00:00"  # 백테스트 시작
+START_DATE = "2024-03-01 00:00:00"  # 백테스트 시작
 # END_DATE = "2021-05-20 00:00:00"
 END_DATE = today()                  # 백테스트 종료
 
 # 지표 관련
-INDICATOR_COMBO_SIZES = [1, 2, 3]  # 한 번에 사용할 보조지표 개수
 # INDICATOR_COMBO_SIZES 최대 3인 경우 사용할 보조지표 설정값, 삭제 금지
+INDICATOR_COMBO_SIZES = [1, 2, 3]  # 한 번에 사용할 보조지표 개수
 INDICATOR_CONFIG = {
     "MA": {
         "short_periods": [5, 10, 20],
@@ -90,6 +90,7 @@ INDICATOR_CONFIG = {
 }
 
 # # INDICATOR_COMBO_SIZES 최대 2인 경우 사용할 보조지표 설정값, 삭제 금지
+# INDICATOR_COMBO_SIZES = [1, 2]  # 한 번에 사용할 보조지표 개수
 # INDICATOR_CONFIG = {
 #     "MA": {
 #         # 주로 쓰이는 단기MA 4종, 장기MA 4종 + 필터 3종
