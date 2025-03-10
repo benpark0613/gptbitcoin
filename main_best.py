@@ -1,7 +1,8 @@
 # gptbitcoin/main_best.py
 # 동일한 백테스트 환경(심볼, DB 설정, 레버리지 등)은 유지하되,
-# 사용자가 START_DATE, END_DATE를 직접 지정하도록 변경.
-# 5분 간격(schedule) 반복 실행 가능.
+# 사용자가 START_DATE를 직접 지정하고, END_DATE는 실행할 때마다 현재 시각(today())으로 재설정되도록 한다.
+# interval_minutes 간격(schedule)으로 반복 실행 가능.
+# 완성된 소스이며, 예시가 아닌 실제 동작 가능한 형태로 작성.
 
 import datetime
 import platform
@@ -25,7 +26,7 @@ from config.config import (
     TIMEFRAMES,
     DB_BOUNDARY_DATE,
     EXCHANGE_OPEN_DATE,
-    DB_PATH,
+    DB_PATH, IS_OOS_BOUNDARY_DATE,
 )
 # 보조지표 설정(INDICATOR_CONFIG) - 워밍업 계산용
 from config.indicator_config import INDICATOR_CONFIG
@@ -37,7 +38,7 @@ from data.update_data import update_data_db
 from data.preprocess import clean_ohlcv
 
 # 지표 계산
-from indicators.indicators import calc_all_indicators
+from indicators.aggregator import calc_all_indicators
 
 # 지표 파라미터(워밍업 봉 계산)
 from utils.indicator_utils import get_required_warmup_bars
@@ -45,7 +46,7 @@ from utils.indicator_utils import get_required_warmup_bars
 # DB 병합 로딩
 from utils.db_utils import prepare_ohlcv_with_warmup
 
-# 콤보 + B/H 백테스트
+# 콤보 + B/H 백테스트 (단일 콤보)
 from backtest.run_best import run_best_single
 
 
@@ -83,17 +84,16 @@ def main_loop(
     timeframe: str,
     combo_info: Dict[str, Any],
     start_date_str: str,
-    end_date_str: str,
-    interval_minutes: int,
     alert_on_same_position: bool
 ):
     """
     주기적으로 실행되는 메인 로직:
-      1) DB update_data_db: DB_BOUNDARY_DATE~end_date_str 구간 삭제 후 재수집
-      2) prepare_ohlcv_with_warmup로 old+recent 병합 (워밍업 고려)
-      3) clean_ohlcv, 지표 계산 후 백테스트 구간 필터링(start_date_str~end_date_str)
-      4) 콤보 + B/H 백테스트
-      5) 콘솔 출력 + 포지션 변경 시 알림
+      1) 매번 end_date_str를 현재시각(today())로 새로 설정
+      2) DB update_data_db: DB_BOUNDARY_DATE~end_date_str 구간 삭제 후 재수집
+      3) prepare_ohlcv_with_warmup (워밍업 고려)
+      4) clean_ohlcv, 지표 계산 후 백테스트 구간 필터링(start_date_str ~ end_date_str)
+      5) 콤보 + B/H 백테스트
+      6) 콘솔 출력 + 포지션 변경 시 알림
 
     Args:
         timeframe (str): 예) "1d", "4h"
@@ -102,17 +102,18 @@ def main_loop(
             "combo_params": [...]
         }
         start_date_str (str): 백테스트 시작 시각(UTC), "YYYY-MM-DD HH:MM:SS"
-        end_date_str (str): 백테스트 종료 시각(UTC), "YYYY-MM-DD HH:MM:SS"
-        interval_minutes (int): 반복 주기(분)
         alert_on_same_position (bool): 포지션이 동일해도 알림을 보낼지 여부
     """
     global _previous_position
 
+    # 1) end_date_str를 현재 UTC 시각으로 매번 새로 설정
+    end_date_str = today()  # 'today'가 지역시간 반환이지만, config에 맞춰 UTC 처리 필요 시 수정
+
     now_kst = datetime.datetime.now(tz=pytz.timezone("Asia/Seoul"))
     now_kst_str = now_kst.strftime("%Y-%m-%d %H:%M:%S KST")
-    print(f"\n[main_best] 시작: {now_kst_str}, TF={timeframe}, interval={interval_minutes}분")
+    print(f"\n[main_best] 시작: {now_kst_str}, TF={timeframe}, end_date={end_date_str}")
 
-    # 1) DB 업데이트 (DB_BOUNDARY_DATE ~ end_date_str)
+    # 2) DB 업데이트 (DB_BOUNDARY_DATE ~ end_date_str)
     try:
         update_data_db(
             symbol=SYMBOL,
@@ -126,14 +127,14 @@ def main_loop(
         notify_user(f"[main_best] DB 업데이트 실패: {e}")
         return
 
-    # 2) prepare_ohlcv_with_warmup
+    # 3) prepare_ohlcv_with_warmup
     try:
         warmup_bars = get_required_warmup_bars(INDICATOR_CONFIG)
         df_merged = prepare_ohlcv_with_warmup(
             symbol=SYMBOL,
             timeframe=timeframe,
             start_utc_str=start_date_str,   # 사용자 정의
-            end_utc_str=end_date_str,       # 사용자 정의
+            end_utc_str=end_date_str,       # 매번 갱신된 end_date_str
             warmup_bars=warmup_bars,
             exchange_open_date_utc_str=EXCHANGE_OPEN_DATE,
             boundary_date_utc_str=DB_BOUNDARY_DATE,
@@ -155,6 +156,7 @@ def main_loop(
         start_utc_dt = utc.localize(naive_start)
         start_ms = int(start_utc_dt.timestamp() * 1000)
 
+        # 현재 end_date_str 문자열도 UTC
         naive_end = datetime.datetime.strptime(end_date_str, dt_format)
         end_utc_dt = utc.localize(naive_end)
         end_ms = int(end_utc_dt.timestamp() * 1000)
@@ -168,14 +170,15 @@ def main_loop(
             notify_user("[main_best] 백테스트 구간 DF가 비어있음.")
             return
 
-        # 3) 콤보 + B/H 백테스트
+        # 4) 콤보 + B/H 백테스트 (단일 콤보)
+        from backtest.run_best import run_best_single
         result = run_best_single(df_test, combo_info)
         combo_score = result["combo_score"]
         combo_position = result["combo_position"]
         combo_trades_log = result["combo_trades_log"]
         bh_score = result["bh_score"]
 
-        # 4) 콘솔 출력
+        # 5) 콘솔 출력
         print("[Combo TradesLog]")
         print(combo_trades_log)
         print(f"[main_best] (Combo) StartC={combo_score['StartCapital']:.2f}, "
@@ -186,7 +189,7 @@ def main_loop(
               f"EndC={bh_score['EndCapital']:.2f}, Return={bh_score['Return']:.4f}, "
               f"Sharpe={bh_score['Sharpe']:.4f}")
 
-        # 5) 포지션 변경 여부 알림
+        # 6) 포지션 변경 여부 알림
         if _previous_position is None:
             notify_user(f"첫 실행, 콤보 포지션={combo_position}")
         else:
@@ -207,13 +210,12 @@ def main_loop(
 def run_main_best_repeated(
     combo_info: Dict[str, Any],
     start_date_str: str,
-    end_date_str: str,
     interval_minutes: int,
     alert_on_same_position: bool
 ):
     """
     interval_minutes 간격으로 main_loop를 반복 실행.
-    START_DATE, END_DATE를 사용자 입력으로 받아 운영할 수 있도록 함.
+    START_DATE는 고정, END_DATE는 실행할 때마다 현재시간(today())로 갱신되도록 한다.
 
     Args:
         combo_info (Dict[str, Any]): 콤보 설정
@@ -225,30 +227,25 @@ def run_main_best_repeated(
                ]
             }
         start_date_str (str): 백테스트 시작 시점(UTC) "YYYY-MM-DD HH:MM:SS"
-        end_date_str (str): 백테스트 종료 시점(UTC)
         interval_minutes (int): 반복 주기(분)
         alert_on_same_position (bool): 포지션 동일시에도 알림 보낼지 여부
     """
     timeframe = combo_info.get("timeframe", TIMEFRAMES[0])
 
-    # 먼저 1회 실행
+    # 먼저 1회 즉시 실행 (end_date_str를 내부에서 today()로 갱신)
     main_loop(
         timeframe=timeframe,
         combo_info=combo_info,
         start_date_str=start_date_str,
-        end_date_str=end_date_str,
-        interval_minutes=interval_minutes,
         alert_on_same_position=alert_on_same_position
     )
 
-    # 이후 interval_minutes 분마다 반복
+    # 이후 interval_minutes 분마다 반복 실행
     schedule.every(interval_minutes).minutes.do(
         main_loop,
         timeframe=timeframe,
         combo_info=combo_info,
         start_date_str=start_date_str,
-        end_date_str=end_date_str,
-        interval_minutes=interval_minutes,
         alert_on_same_position=alert_on_same_position
     )
 
@@ -259,41 +256,41 @@ def run_main_best_repeated(
 
 if __name__ == "__main__":
     """
-    실행 예시:
-    1) main.py 결과 CSV에서 used_indicators를 복사.
-    2) 아래 MY_COMBO_INFO에 붙여넣고,
-    3) START_DATE, END_DATE를 원하는 UTC 시각으로 지정.
-    4) run_main_best_repeated(...) 호출.
+    사용 예시:
+      python main_best.py
+      → 아래 변수(MY_COMBO_INFO, MY_START_DATE, INTERVAL_MINUTES)를 조정해서 사용
 
-    예) 
-    MY_COMBO_INFO = {
-      "timeframe": "1d",
-      "combo_params": [
-        {"type": "MA", "short_period": 5, "long_period": 100, "band_filter": 0.0}
-      ]
-    }
-    MY_START_DATE = "2025-01-01 00:00:00"  # UTC
-    MY_END_DATE   = "2025-12-31 23:59:59"  # UTC
-    INTERVAL_MINUTES = 5
-    ALERT_ON_SAME_POSITION = False
+    - MY_COMBO_INFO: 사용하려는 단일 콤보 설정
+    - MY_START_DATE: 백테스트 시작 시점(UTC 문자열)
+    - 매번 끝 시점(END_DATE)는 schedule 실행 시점에 today()로 자동 갱신
+    - INTERVAL_MINUTES: 반복 주기
+    - ALERT_ON_SAME_POSITION: 포지션이 동일해도 알림을 받을지 여부
     """
-    MY_COMBO_INFO = {"timeframe": "4h", "combo_params": [{"type": "MA", "short_period": 6, "long_period": 12, "band_filter": 0, "buy_time_delay": 0, "sell_time_delay": 0, "holding_period": 24}]}
+    MY_COMBO_INFO = {
+        "timeframe": "1h",
+        "combo_params": [
+            {
+                "type": "MACD",
+                "fast_period": 8,
+                "slow_period": 26,
+                "signal_period": 10,
+                "buy_time_delay": 0,
+                "sell_time_delay": 0,
+                "holding_period": float('inf')
+            }
+        ]
+    }
 
-    # 사용자가 직접 지정
-    MY_START_DATE = "2025-03-01 00:00:00"  # UTC 기준
-    # MY_END_DATE   = "2025-03-14 23:59:59"  # UTC 기준
-    MY_END_DATE   = today()
-
+    MY_START_DATE = IS_OOS_BOUNDARY_DATE
     INTERVAL_MINUTES = 1
     ALERT_ON_SAME_POSITION = False
 
     print(f"[main_best] 스크립트 시작 - TF={MY_COMBO_INFO['timeframe']}, "
-          f"start={MY_START_DATE}, end={MY_END_DATE}, interval={INTERVAL_MINUTES}분")
+          f"start={MY_START_DATE}, interval={INTERVAL_MINUTES}분")
 
     run_main_best_repeated(
         combo_info=MY_COMBO_INFO,
         start_date_str=MY_START_DATE,
-        end_date_str=MY_END_DATE,
         interval_minutes=INTERVAL_MINUTES,
         alert_on_same_position=ALERT_ON_SAME_POSITION
     )

@@ -52,10 +52,10 @@ USE_IS_OOS = True
 #   IS/OOS 구간을 나누는 기준 시점(UTC)
 #   open_time < IS_OOS_BOUNDARY_DATE => IS 구간
 #   open_time >= IS_OOS_BOUNDARY_DATE => OOS 구간
-IS_OOS_BOUNDARY_DATE = "2025-01-01 00:00:00"
+IS_OOS_BOUNDARY_DATE = "2025-02-10 00:00:00"
 
 # 백테스트 전체 기간 (UTC)
-START_DATE = "2024-03-01 00:00:00"  # 시작
+START_DATE = "2024-11-10 00:00:00"  # 시작
 # END_DATE = "2021-05-20 00:00:00"
 END_DATE = today()                  # 종료 (오늘 날짜를 기본값)
 

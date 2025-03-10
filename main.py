@@ -1,28 +1,26 @@
 # gptbitcoin/main.py
+# 최소한의 한글 주석, 구글 스타일 docstring
 """
 메인 실행 스크립트.
-
-1) 지표 콤보 생성
-2) DB 업데이트 (recent 모드)
-3) prepare_ohlcv_with_warmup로 DB 병합 (워밍업 고려)
-4) clean_ohlcv, 보조지표 calc_all_indicators
-5) IS/OOS 분할 시 run_is → run_oos, 단일이면 run_nosplit
-6) 결과를 data_export 모듈을 통해 CSV/Excel 저장
+1) DB 업데이트 (recent 모드)
+2) DB에서 OHLCV 로드 (워밍업 포함)
+3) clean_ohlcv → calc_all_indicators (지표는 한 번만 계산)
+4) IS/OOS 또는 단일 구간 백테스트 (run_is, run_oos, run_nosplit)
+5) CSV/Excel 출력
 """
 
-import csv
-import datetime
 import os
-import pandas as pd
+import datetime
 import pytz
+import pandas as pd
 
-# 백테스트 관련 모듈
+# 백테스트/콤보 관련
 from backtest.combo_generator import generate_indicator_combos
 from backtest.run_is import run_is
 from backtest.run_oos import run_oos
 from backtest.run_nosplit import run_nosplit
 
-# 환경설정 (보조지표 외 설정)
+# 환경설정
 from config.config import (
     SYMBOL,
     TIMEFRAMES,
@@ -36,25 +34,22 @@ from config.config import (
     LOG_LEVEL,
     USE_IS_OOS
 )
-
 from config.indicator_config import INDICATOR_CONFIG
 
-# 전처리(NaN/이상치 검사)
-from data.preprocess import clean_ohlcv
-
-# DB 업데이트 (API 요청 → SQLite 저장)
+# DB 업데이트
 from data.update_data import update_data_db
 
-# 지표 계산
-from indicators.indicators import calc_all_indicators
+# 전처리, 지표 계산
+from data.preprocess import clean_ohlcv
+from indicators.aggregator import calc_all_indicators
 
-# DB 유틸 (prepare_ohlcv_with_warmup)
+# DB에서 병합 조회
 from utils.db_utils import prepare_ohlcv_with_warmup
 
-# 지표 파라미터 콤보 계산 시 필요
+# 지표 파라미터 유틸
 from utils.indicator_utils import get_required_warmup_bars
 
-# 데이터 내보내기 모듈
+# 결과 출력
 from utils.data_export import (
     export_performance,
     export_ohlcv_with_indicators
@@ -64,56 +59,62 @@ from utils.data_export import (
 def run_main():
     """
     메인 실행 함수.
-    타임프레임별로 DB 업데이트 → 백테스트 → 결과 저장을 수행한다.
+
+    Steps:
+      1) Generate combos
+      2) For each timeframe:
+         - Update DB (recent mode)
+         - Load OHLCV with warmup
+         - Clean data, calc indicators (once)
+         - Filter main period
+         - Run IS/OOS or single backtest
+         - Export OHLCV+indicators
+      3) Collect performance rows, export CSV/Excel
     """
     print(f"[main.py] Start - SYMBOL={SYMBOL}, TIMEFRAMES={TIMEFRAMES}, "
           f"LOG_LEVEL={LOG_LEVEL}, USE_IS_OOS={USE_IS_OOS}")
 
     if not TIMEFRAMES:
-        print("[main.py] TIMEFRAMES가 비어있음. 종료.")
+        print("[main.py] No TIMEFRAMES. Exiting.")
         return
 
-    # 1) 지표 파라미터 콤보 생성
+    # 1) combos
     combos = generate_indicator_combos()
     if not combos:
-        print("[main.py] combo_generator 결과가 비어있음. 종료.")
+        print("[main.py] No combos generated. Exiting.")
         return
 
-    # 2) 보조지표 계산에 필요한 워밍업 봉 수
+    # 필요 워밍업 (전체 지표 기준)
     warmup_bars = get_required_warmup_bars(INDICATOR_CONFIG)
 
-    # IS/OOS 경계(UTC)
+    # IS/OOS boundary
     dt_format = "%Y-%m-%d %H:%M:%S"
     utc = pytz.utc
     naive_is_boundary = datetime.datetime.strptime(IS_OOS_BOUNDARY_DATE, dt_format)
     is_boundary_utc = utc.localize(naive_is_boundary)
     is_boundary_str = is_boundary_utc.strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    # 결과 폴더
     os.makedirs(RESULTS_DIR, exist_ok=True)
-
-    # 모든 TF 결과를 합칠 리스트
     all_perf_rows = []
 
-    # 3) 각 타임프레임 순회
     for tf in TIMEFRAMES:
         print(f"\n[main.py] --- Timeframe: {tf} ---")
 
-        # DB에서 DB_BOUNDARY_DATE ~ END_DATE 구간 삭제 후 재수집 (recent 모드)
+        # 2) Update DB in "recent" mode
         try:
-            print(f"[main.py] Delete+ReDownload from {DB_BOUNDARY_DATE} to {END_DATE}, TF={tf}")
+            print(f"[main.py] Update DB from {DB_BOUNDARY_DATE} to {END_DATE}, TF={tf}, mode=recent")
             update_data_db(
                 symbol=SYMBOL,
                 timeframe=tf,
                 start_str=DB_BOUNDARY_DATE,  # UTC
                 end_str=END_DATE,            # UTC
-                update_mode="recent"         # old_data는 수정 안 함
+                update_mode="recent"
             )
         except Exception as e:
-            print(f"[main.py] update_data_db(recent) 오류: {e}")
+            print(f"[main.py] update_data_db error: {e}")
             continue
 
-        # prepare_ohlcv_with_warmup
+        # 3) Prepare data from DB with warmup
         try:
             df_merged = prepare_ohlcv_with_warmup(
                 symbol=SYMBOL,
@@ -125,17 +126,15 @@ def run_main():
                 boundary_date_utc_str=DB_BOUNDARY_DATE,
                 db_path=DB_PATH
             )
-
-            # 전처리
             df_merged = clean_ohlcv(df_merged)
             if df_merged.empty:
-                print(f"[main.py] 병합 후 DF가 비어 있음: TF={tf}")
+                print(f"[main.py] Merged DF empty. TF={tf}")
                 continue
 
-            # 지표 계산
-            df_ind = calc_all_indicators(df_merged)
+            # (a) 여기서 지표를 한 번만 계산
+            df_with_ind = calc_all_indicators(df_merged, cfg=INDICATOR_CONFIG)
 
-            # 백테스트 메인 구간 필터링
+            # (b) 메인 기간 필터
             naive_start = datetime.datetime.strptime(START_DATE, dt_format)
             start_utc_dt = utc.localize(naive_start)
             start_ms = int(start_utc_dt.timestamp() * 1000)
@@ -144,48 +143,41 @@ def run_main():
             end_utc_dt = utc.localize(naive_end)
             end_ms = int(end_utc_dt.timestamp() * 1000)
 
-            df_test = df_ind[
-                (df_ind["open_time"] >= start_ms) & (df_ind["open_time"] <= end_ms)
+            df_test = df_with_ind[
+                (df_with_ind["open_time"] >= start_ms) & (df_with_ind["open_time"] <= end_ms)
             ].copy()
             df_test.reset_index(drop=True, inplace=True)
-
             if df_test.empty:
-                print(f"[main.py] 백테스트 구간 DF가 없음. TF={tf}")
+                print(f"[main.py] Backtest DF empty. TF={tf}")
                 continue
 
         except Exception as e:
-            print(f"[main.py] prepare/전처리 중 오류: {e}")
+            print(f"[main.py] prepare data error: {e}")
             continue
 
-        # IS/OOS 모드
+        # 4) Backtest
         if USE_IS_OOS:
-            print(f"[main.py] IS/OOS 모드, boundary={is_boundary_str}")
+            print(f"[main.py] IS/OOS mode, boundary={is_boundary_str}")
             is_boundary_ms = int(is_boundary_utc.timestamp() * 1000)
-
             df_is = df_test[df_test["open_time"] < is_boundary_ms].copy()
             df_oos = df_test[df_test["open_time"] >= is_boundary_ms].copy()
-
             print(f" - IS rows={len(df_is)}, OOS rows={len(df_oos)}")
 
-            # 1) IS 전체 콤보 백테스트
+            # run_is
             is_rows = run_is(df_is, combos=combos, timeframe=tf)
-
-            # 2) OOS 전체 콤보 백테스트 (IS 통과 여부와 무관)
+            # run_oos
             oos_rows = run_oos(df_oos, combos=combos, timeframe=tf)
 
-            # 3) IS/OOS 결과 병합 (used_indicators 기준 outer join)
             df_is_ = pd.DataFrame(is_rows)
             df_oos_ = pd.DataFrame(oos_rows)
 
             merged_df = pd.merge(
-                df_is_,
-                df_oos_,
+                df_is_, df_oos_,
                 on=["used_indicators", "timeframe"],
                 how="outer",
                 suffixes=("_is", "_oos")
             )
 
-            # 컬럼 정렬
             columns_order = [
                 "timeframe",
                 "is_start_cap", "is_end_cap", "is_return", "is_trades",
@@ -194,7 +186,6 @@ def run_main():
                 "oos_sharpe", "oos_mdd", "oos_current_position",
                 "used_indicators"
             ]
-            # 로그 컬럼 추가
             if "is_trades_log" in merged_df.columns:
                 columns_order.append("is_trades_log")
             if "oos_trades_log" in merged_df.columns:
@@ -203,31 +194,26 @@ def run_main():
             for col in columns_order:
                 if col not in merged_df.columns:
                     merged_df[col] = None
-
             merged_df = merged_df[columns_order]
 
             final_rows = merged_df.to_dict("records")
             all_perf_rows.extend(final_rows)
-
         else:
-            # 단일 구간만 (no IS/OOS)
-            print("[main.py] USE_IS_OOS=False => run_nosplit")
+            print("[main.py] Single (No IS/OOS) mode")
             single_rows = run_nosplit(df_test, combos, timeframe=tf)
             all_perf_rows.extend(single_rows)
 
-        # OHLCV+지표 CSV 저장 (data_export 모듈 사용)
+        # 5) Export OHLCV+indicators CSV
         tf_folder = os.path.join(RESULTS_DIR, tf)
         export_ohlcv_with_indicators(df_test, SYMBOL, tf, tf_folder)
 
-    # 최종 성과 지표 (all_perf_rows) 취합 후 저장
+    # 6) Export performance
     if not all_perf_rows:
-        print("[main.py] 수집된 성과지표가 없습니다.")
+        print("[main.py] No performance data.")
     else:
         df_perf = pd.DataFrame(all_perf_rows)
         export_performance(df_perf, SYMBOL, RESULTS_DIR, "final_performance")
-        print("[main.py] 모든 TF 결과 저장 완료.")
-
-    print("[main.py] Done. 모든 타임프레임 처리 끝.")
+        print("[main.py] All timeframes done. Output saved.")
 
 
 if __name__ == "__main__":
