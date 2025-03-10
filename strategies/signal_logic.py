@@ -1,6 +1,8 @@
 # gptbitcoin/strategies/signal_logic.py
 # 최소한의 한글 주석, 구글 스타일 docstring
-# time_delays, holding_periods는 engine에서 처리하므로 여기서는 band_filter 등 지표별 파라미터 위주로 신호 로직을 완성한다.
+# time_delays, holding_periods는 engine에서 처리하므로 여기서는
+# band_filter 등 지표별 파라미터 위주로 시그널 로직을 완성한다.
+# 논문 방식을 따라 MA의 band_filter를 절댓값이 아닌 퍼센트(비율) 차로 적용한다.
 
 from typing import List
 
@@ -15,13 +17,15 @@ def ma_crossover_signal(
     signal_col: str = "signal_ma"
 ) -> pd.DataFrame:
     """
-    MA 크로스오버 신호를 생성한다. band_filter 이상의 차이가 나야 신호가 발생한다.
+    MA 크로스오버 신호를 생성한다.
+    논문 방식에 따라, (단기 MA / 장기 MA - 1)의 비율이 ±band_filter를 초과하면 매매 신호가 발생한다.
 
     Args:
         df (pd.DataFrame): 단기/장기 MA 칼럼을 포함한 DataFrame
         short_ma_col (str): 단기 MA 칼럼명
         long_ma_col (str): 장기 MA 칼럼명
-        band_filter (float, optional): MA 차이(단기-장기)가 이 값보다 커야 매수, -band_filter보다 작아야 매도
+        band_filter (float, optional): MA 비율 차가 이 값보다 커야 매수, -band_filter보다 작아야 매도
+                                       예: band_filter=0.01이면, 단기 MA가 장기 MA보다 1% 초과해야 매수
         signal_col (str, optional): 결과 신호 칼럼명
 
     Returns:
@@ -31,12 +35,18 @@ def ma_crossover_signal(
         raise ValueError(f"MA 컬럼이 존재하지 않습니다: {short_ma_col}, {long_ma_col}")
 
     df[signal_col] = 0
-    diff = df[short_ma_col] - df[long_ma_col]
 
-    # band_filter 이상이면 매수
-    df.loc[diff > band_filter, signal_col] = 1
-    # band_filter 이하(음수)로 내려가면 매도
-    df.loc[diff < -band_filter, signal_col] = -1
+    # 장기 MA가 0이 아닌 구간만 유효비율 계산
+    valid_mask = (df[long_ma_col] != 0)
+    ratio = (df[short_ma_col] / df[long_ma_col]) - 1.0  # 예: 0.01 => 1% 차이
+
+    # 매수: 비율이 band_filter를 초과
+    buy_mask = valid_mask & (ratio > band_filter)
+    # 매도: 비율이 -band_filter 미만
+    sell_mask = valid_mask & (ratio < -band_filter)
+
+    df.loc[buy_mask, signal_col] = 1
+    df.loc[sell_mask, signal_col] = -1
 
     return df
 
@@ -83,7 +93,7 @@ def obv_signal(
     Args:
         df (pd.DataFrame): OBV(또는 OBV SMA) 칼럼이 포함된 DataFrame
         obv_col (str, optional): OBV 관련 칼럼명 (기본 "obv")
-        threshold (float, optional): 기준값
+        threshold (float, optional): 기준값 (ex. 0.0)
         signal_col (str, optional): 결과 신호 칼럼명
 
     Returns:

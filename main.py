@@ -1,17 +1,16 @@
+# gptbitcoin/main.py
 """
-main.py
+메인 실행 스크립트.
 
-구글 스타일 docstring, 최소한의 한글 주석을 사용한다.
-
-IS/OOS 분할 로직:
-  1) run_is.py 에서 전체 콤보(IS) 백테스트
-  2) run_oos.py 에서 통과 여부와 상관없이 전체 콤보(OOS) 백테스트
-  3) IS 결과와 OOS 결과를 used_indicators(콤보 파라미터)에 따라 병합
-최종 CSV에는 is_passed 여부 포함, 사용자가 필요 시 필터링 가능.
-
-단, USE_IS_OOS가 False이면 run_nosplit로 단일 구간 백테스트만 수행한다.
+1) 지표 콤보 생성
+2) DB 업데이트 (recent 모드)
+3) prepare_ohlcv_with_warmup로 DB 병합 (워밍업 고려)
+4) clean_ohlcv, 보조지표 calc_all_indicators
+5) IS/OOS 분할 시 run_is → run_oos, 단일이면 run_nosplit
+6) 결과를 data_export 모듈을 통해 CSV/Excel 저장
 """
 
+import csv
 import datetime
 import os
 import pandas as pd
@@ -55,16 +54,17 @@ from utils.db_utils import prepare_ohlcv_with_warmup
 # 지표 파라미터 콤보 계산 시 필요
 from utils.indicator_utils import get_required_warmup_bars
 
+# 데이터 내보내기 모듈
+from utils.data_export import (
+    export_performance,
+    export_ohlcv_with_indicators
+)
+
 
 def run_main():
     """
-    메인 실행:
-      1) 지표 콤보 생성
-      2) DB 경계 ~ END_DATE 구간 'recent' 모드로 삭제 후 재수집
-      3) prepare_ohlcv_with_warmup로 DB 병합 (워밍업 고려)
-      4) clean_ohlcv, 보조지표 calc_all_indicators
-      5) IS/OOS 분할 시 run_is → run_oos, 단일이면 run_nosplit
-      6) 결과 CSV 저장
+    메인 실행 함수.
+    타임프레임별로 DB 업데이트 → 백테스트 → 결과 저장을 수행한다.
     """
     print(f"[main.py] Start - SYMBOL={SYMBOL}, TIMEFRAMES={TIMEFRAMES}, "
           f"LOG_LEVEL={LOG_LEVEL}, USE_IS_OOS={USE_IS_OOS}")
@@ -191,7 +191,7 @@ def run_main():
                 "is_start_cap", "is_end_cap", "is_return", "is_trades",
                 "is_sharpe", "is_mdd", "is_passed",
                 "oos_start_cap", "oos_end_cap", "oos_return", "oos_trades",
-                "oos_sharpe", "oos_mdd",
+                "oos_sharpe", "oos_mdd", "oos_current_position",
                 "used_indicators"
             ]
             # 로그 컬럼 추가
@@ -215,21 +215,17 @@ def run_main():
             single_rows = run_nosplit(df_test, combos, timeframe=tf)
             all_perf_rows.extend(single_rows)
 
-        # OHLCV+지표 CSV 저장
+        # OHLCV+지표 CSV 저장 (data_export 모듈 사용)
         tf_folder = os.path.join(RESULTS_DIR, tf)
-        os.makedirs(tf_folder, exist_ok=True)
-        csv_ind_path = os.path.join(tf_folder, f"ohlcv_with_indicators_{SYMBOL}_{tf}.csv")
-        df_test.to_csv(csv_ind_path, index=False, encoding="utf-8")
-        print(f"[main.py] Saved indicators CSV: {csv_ind_path}, rows={len(df_test)}")
+        export_ohlcv_with_indicators(df_test, SYMBOL, tf, tf_folder)
 
-    # 모든 TF 결과 합쳐 CSV 저장
+    # 최종 성과 지표 (all_perf_rows) 취합 후 저장
     if not all_perf_rows:
         print("[main.py] 수집된 성과지표가 없습니다.")
     else:
         df_perf = pd.DataFrame(all_perf_rows)
-        final_csv_path = os.path.join(RESULTS_DIR, f"final_performance_{SYMBOL}.csv")
-        df_perf.to_csv(final_csv_path, index=False, encoding="utf-8")
-        print(f"[main.py] 모든 TF 결과 CSV 저장 완료: {final_csv_path}")
+        export_performance(df_perf, SYMBOL, RESULTS_DIR, "final_performance")
+        print("[main.py] 모든 TF 결과 저장 완료.")
 
     print("[main.py] Done. 모든 타임프레임 처리 끝.")
 

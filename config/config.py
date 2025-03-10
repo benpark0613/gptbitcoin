@@ -30,8 +30,8 @@ START_CAPITAL = 100_000   # 백테스트 시작 자본
 
 # 심볼, 타임프레임 관련
 SYMBOL = "BTCUSDT"        # 기본 심볼
-# TIMEFRAMES = ["1d", "4h", "1h", "15m"]  # 사용할 타임프레임 목록
-TIMEFRAMES = ["15m"]       # 사용할 타임프레임 목록
+TIMEFRAMES = ["1d", "4h", "1h", "15m"]  # 사용할 타임프레임 목록
+# TIMEFRAMES = ["1d"]       # 사용할 타임프레임 목록
 
 # 바이낸스 비트코인 선물 오픈일 (API 요청 시 구간 참조, UTC 기준)
 EXCHANGE_OPEN_DATE = "2019-09-08 00:00:00"
@@ -52,10 +52,10 @@ USE_IS_OOS = True
 #   IS/OOS 구간을 나누는 기준 시점(UTC)
 #   open_time < IS_OOS_BOUNDARY_DATE => IS 구간
 #   open_time >= IS_OOS_BOUNDARY_DATE => OOS 구간
-IS_OOS_BOUNDARY_DATE = "2025-03-01 00:00:00"
+IS_OOS_BOUNDARY_DATE = "2025-01-01 00:00:00"
 
 # 백테스트 전체 기간 (UTC)
-START_DATE = "2025-01-01 00:00:00"  # 시작
+START_DATE = "2024-03-01 00:00:00"  # 시작
 # END_DATE = "2021-05-20 00:00:00"
 END_DATE = today()                  # 종료 (오늘 날짜를 기본값)
 

@@ -11,3 +11,4 @@ venv/
 *.pyc
 .backup/20250303/data/db/ohlcv.sqlite
 *.sqlite
+*.xlsx

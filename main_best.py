@@ -277,8 +277,7 @@ if __name__ == "__main__":
     INTERVAL_MINUTES = 5
     ALERT_ON_SAME_POSITION = False
     """
-    MY_COMBO_INFO = {"timeframe": "15m", "combo_params": [{"type": "MA", "short_period": 30, "long_period": 96, "band_filter": 0, "time_delay": 0, "holding_period": 12}]}
-
+    MY_COMBO_INFO = {"timeframe": "4h", "combo_params": [{"type": "MA", "short_period": 6, "long_period": 12, "band_filter": 0, "buy_time_delay": 0, "sell_time_delay": 0, "holding_period": 24}]}
 
     # 사용자가 직접 지정
     MY_START_DATE = "2025-03-01 00:00:00"  # UTC 기준

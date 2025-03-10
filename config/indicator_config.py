@@ -43,7 +43,7 @@ INDICATOR_CONFIG = {
         # 매도 신호 필터
         "sell_signal_filters": [0.05, 0.1, 0.5, 1, 5, 10, 20],
         # 매수 신호 시간 지연 필터
-        "buy_time_delay": [0, 1, 2, 3, 4, 5],
+        "buy_time_delays": [0, 1, 2, 3, 4, 5],
         # 매도 신호 시간 지연 필터
         "sell_time_delays": [0, 1, 2, 3, 4],
         # 공통 시간 지연 필터
