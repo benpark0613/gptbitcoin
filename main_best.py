@@ -377,20 +377,9 @@ if __name__ == "__main__":
     """
 
     SEND_EMAIL = True  # 메일 발송 여부
-    MY_COMBO_INFO = {
-        "timeframe": "1h",
-        "combo_params": [
-            {
-                "type": "MACD",
-                "fast_period": 8,
-                "slow_period": 26,
-                "signal_period": 10,
-                "buy_time_delay": 0,
-                "sell_time_delay": 0,
-                "holding_period": float("inf")
-            }
-        ]
-    }
+    MY_COMBO_INFO = {"timeframe": "1d", "combo_params": [{"type": "RSI", "lookback": 24, "overbought": 60, "oversold": 40, "buy_time_delay": 2, "sell_time_delay": 2, "holding_period": float('inf')}]}
+
+
 
     # 기본값: IS_OOS_BOUNDARY_DATE ~ 오늘
     MY_START_DATE = IS_OOS_BOUNDARY_DATE  # 예: '2023-01-01 00:00:00'

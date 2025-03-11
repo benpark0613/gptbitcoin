@@ -12,57 +12,57 @@ INDICATOR_CONFIG = {
     # ---------------------------------------------------
     "MA": {
         # 단기 이동평균: 범위를 늘려 다양한 주기를 커버
-        "short_ma_periods": [5, 10, 15, 20, 30, 40, 50, 60, 80, 90, 100, 120, 140, 160],
+        "short_ma_periods": [1,2,6,12,18,24,30,48,96,144,168],
         # 장기 이동평균
-        "long_ma_periods": [180, 200, 220, 250, 300, 350, 400],
+        "long_ma_periods": [2,6,12,18,24,30,48,96,144,168,192],
         # 밴드 필터 (노이즈 제어용)
-        "band_filters": [0.0, 0.5, 1.0],
+        "band_filters": [0.0, 0.05, 0.1],
         # 시간 지연 필터
         "time_delays": [0, 3, 5],
         # 보유 기간
-        "holding_periods": [float('inf')]
+        "holding_periods": [12, float('inf')]
     },
 
     # ---------------------------------------------------
     # 2) RSI
     # ---------------------------------------------------
     "RSI": {
-        "lookback_periods": [7, 10, 14, 18, 21, 25, 28, 35, 40, 45, 50, 60],
-        "thresholds": [20, 30, 70, 80],
-        "time_delays": [0, 3, 5],
-        "holding_periods": [float('inf')]
+        "lookback_periods": [2,6,12, 14,18,24,30,48,96,144,168,192],
+        "thresholds": [10,15,20,25],
+        "time_delays": [1,2,5],
+        "holding_periods": [6, 12, float('inf')]
     },
 
     # ---------------------------------------------------
     # 3) 필터 룰 (Filter)
     # ---------------------------------------------------
     "Filter": {
-        "lookback_periods": [5, 10, 15, 20, 25, 30, 35, 40],
-        "uniform_filters": [0.01, 0.02, 0.03, 0.05],
+        "lookback_periods": [1,2,6,12,24],
+        "uniform_filters": [0.05,0.1,0.5,1,5,10,20],
         "uniform_time_delays": [0, 3, 5],
-        "holding_periods": [float('inf')]
+        "holding_periods": [6, 18, float('inf')]
     },
 
     # ---------------------------------------------------
     # 4) 채널 돌파 (CB)
     # ---------------------------------------------------
     "CB": {
-        "lookback_periods": [10, 20, 30, 40, 50, 60, 90, 120],
-        "c_percent_channels": [1, 2, 3, 4],
-        "band_filters": [0.0, 0.5, 1.0],
-        "time_delays": [0, 3, 5],
-        "holding_periods": [float('inf')]
+        "lookback_periods": [6,12,18,24,36,72,120,168],
+        "c_percent_channels": [0.5,1,5,10, 15],
+        "band_filters": [0.05,0.1,0.5,1,5],
+        "time_delays": [0,1,2],
+        "holding_periods": [6, 18, float('inf')]
     },
 
     # ---------------------------------------------------
     # 5) OBV (On-Balance Volume)
     # ---------------------------------------------------
     "OBV": {
-        "short_ma_periods": [5, 10, 15, 20, 25, 30, 40, 50],
-        "long_ma_periods": [60, 100, 200, 300, 400],
-        "band_filters": [0.0, 0.5, 1.0],
+        "short_ma_periods": [2,6,12,18,24,30,48,96,144,168],
+        "long_ma_periods": [2,6,12,18,24,30,48,96,144,168,192],
+        "band_filters": [0,0.01,0.05],
         "time_delays": [0, 3, 5],
-        "holding_periods": [float('inf')]
+        "holding_periods": [6, float('inf')]
     },
 
     # ---------------------------------------------------
@@ -73,7 +73,7 @@ INDICATOR_CONFIG = {
         "slow_periods": [26, 30, 35, 40, 45, 50],
         "signal_periods": [9, 10, 12, 15],
         "time_delays": [0, 3, 5],
-        "holding_periods": [float('inf')]
+        "holding_periods": [6, float('inf')]
     },
 
     # ---------------------------------------------------
@@ -83,7 +83,7 @@ INDICATOR_CONFIG = {
         "dmi_periods": [14, 20, 25, 30, 35, 40, 45, 50],
         "adx_thresholds": [20, 25, 30, 35, 40],
         "time_delays": [0, 3, 5],
-        "holding_periods": [float('inf')]
+        "holding_periods": [6, float('inf')]
     },
 
     # ---------------------------------------------------
@@ -93,7 +93,7 @@ INDICATOR_CONFIG = {
         "lookback_periods": [14, 20, 26, 30, 35, 40, 50, 60],
         "stddev_multipliers": [1.5, 2, 2.5, 3],
         "time_delays": [0, 3, 5],
-        "holding_periods": [float('inf')]
+        "holding_periods": [6, float('inf')]
     },
 
     # ---------------------------------------------------
@@ -104,7 +104,7 @@ INDICATOR_CONFIG = {
         "kijun_period": [21, 26, 30, 35, 40, 45],
         "senkou_span_b_period": [52, 60, 65, 70, 80, 90],
         "time_delays": [0, 3, 5],
-        "holding_periods": [float('inf')]
+        "holding_periods": [6, float('inf')]
     },
 
     # ---------------------------------------------------
@@ -114,7 +114,7 @@ INDICATOR_CONFIG = {
         "acceleration_step": [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08],
         "acceleration_max": [0.2, 0.3, 0.4, 0.5],
         "time_delays": [0, 3, 5],
-        "holding_periods": [float('inf')]
+        "holding_periods": [6, float('inf')]
     },
 
     # ---------------------------------------------------
@@ -124,7 +124,7 @@ INDICATOR_CONFIG = {
         "atr_period": [7, 10, 14, 20, 28, 35, 40, 50],
         "multiplier": [2, 3, 4, 5, 6],
         "time_delays": [0, 3, 5],
-        "holding_periods": [float('inf')]
+        "holding_periods": [6, float('inf')]
     },
 
     # ---------------------------------------------------
@@ -142,16 +142,16 @@ INDICATOR_CONFIG = {
             [0.5, 0.786, 1.618, 2.618, 3.618]
         ],
         "time_delays": [0, 3, 5],
-        "holding_periods": [float('inf')]
+        "holding_periods": [6, float('inf')]
     },
 
     # ---------------------------------------------------
     # 13) Support and Resistance
     # ---------------------------------------------------
     "SR": {
-        "lookback_periods": [5, 10, 15, 20, 30],
-        "band_filters": [0.0, 0.5, 1.0],
+        "lookback_periods": [2,6,12,18,24,30,48,96,168],
+        "band_filters": [0.05,0.5,1,5],
         "time_delays": [0, 3, 5],
-        "holding_periods": [float('inf')]
+        "holding_periods": [6, 12, float('inf')]
     }
 }
