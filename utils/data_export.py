@@ -1,13 +1,7 @@
-# gptbitcoin/data_export.py
-"""
-CSV 및 Excel로 데이터를 내보내는 유틸 함수 모음
-(셀마다 조건부 색상을 지정하기 위해 pandas의 Styler 사용)
-"""
-
 import os
 import csv
 import pandas as pd
-
+from dateutil.relativedelta import relativedelta
 
 def export_performance(
         df: pd.DataFrame,
@@ -48,7 +42,6 @@ def export_performance(
     xlsx_path = os.path.join(results_dir, f"{base_filename}_{symbol}.xlsx")
 
     # ---------- (A) 컬럼별(셀별) 색상 함수들 ----------
-
     def highlight_sharpe(val):
         """
         샤프지수가 1 이상이면 셀 배경을 빨간색으로.
@@ -76,38 +69,34 @@ def export_performance(
         return ""
 
     # ---------- (B) 특정 행(바이앤홀드) 전체 색상 함수 ----------
-
     def highlight_bh_row(row):
         """
         row 단위로 판단해서, 'Buy and Hold'이면 전체를 노란색으로 칠한다.
         """
-        # 'used_indicators' 값이 'Buy and Hold'면
         if "used_indicators" in row and row["used_indicators"] == "Buy and Hold":
             return ["background-color: yellow"] * len(row)
         return [""] * len(row)
 
     # ---------- (C) Styler 적용 순서 ----------
-    # 1) 컬럼별로 applymap → 각 셀의 조건부 색상 (sharpe=red, mdd=green)
+    # 1) 컬럼별로 map → 각 셀의 조건부 색상 (sharpe=red, mdd=green)
     # 2) 전체 행(바이앤홀드) → 노란색 (우선적으로 마지막에 적용되어 덮어씀)
-    #    만약 셀 색을 유지하고 싶다면, merge_styler 로직 등 별도 구현 필요
-
     styler = df.style
 
-    # is_sharpe 컬럼에 applymap
+    # is_sharpe 컬럼에 map
     if "is_sharpe" in df.columns:
-        styler = styler.applymap(highlight_sharpe, subset=["is_sharpe"])
+        styler = styler.map(highlight_sharpe, subset=["is_sharpe"])
 
-    # oos_sharpe 컬럼에 applymap
+    # oos_sharpe 컬럼에 map
     if "oos_sharpe" in df.columns:
-        styler = styler.applymap(highlight_sharpe, subset=["oos_sharpe"])
+        styler = styler.map(highlight_sharpe, subset=["oos_sharpe"])
 
-    # is_mdd 컬럼에 applymap
+    # is_mdd 컬럼에 map
     if "is_mdd" in df.columns:
-        styler = styler.applymap(highlight_mdd, subset=["is_mdd"])
+        styler = styler.map(highlight_mdd, subset=["is_mdd"])
 
-    # oos_mdd 컬럼에 applymap
+    # oos_mdd 컬럼에 map
     if "oos_mdd" in df.columns:
-        styler = styler.applymap(highlight_mdd, subset=["oos_mdd"])
+        styler = styler.map(highlight_mdd, subset=["oos_mdd"])
 
     # 마지막에 바이앤홀드 행 전체 노란색
     styler = styler.apply(highlight_bh_row, axis=1)
@@ -126,7 +115,7 @@ def export_ohlcv_with_indicators(
     """
     OHLCV + 보조지표가 포함된 DataFrame을 CSV로 저장한다.
     여기서는 색칠 규칙 없이 단순 CSV만 저장 예시.
-    (원한다면 .style.applymap() 로직을 추가해 Excel로도 저장 가능)
+    (원한다면 .style.map() 로직을 추가해 Excel로도 저장 가능)
     """
     if df.empty:
         print("[data_export] OHLCV+지표 DataFrame이 비어 있음.")

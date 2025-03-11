@@ -5,6 +5,9 @@
 import datetime
 from datetime import timedelta
 
+from dateutil.relativedelta import relativedelta
+
+
 def timeframe_to_timedelta(tf_str: str) -> timedelta:
     """
     타임프레임 문자열을 timedelta로 변환.
@@ -58,15 +61,33 @@ def ms_to_kst_str(ms_val: int) -> str:
     return dt_kst.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def subtract_months(datetime_str: str, months: int) -> str:
+    """
+    주어진 날짜 문자열에서 원하는 개월 수만큼 빼서 반환한다.
+
+    Args:
+        datetime_str (str): 날짜와 시간이 포함된 문자열 (예: "2025-03-11 09:23:53")
+        months (int): 뺄 달 수
+
+    Returns:
+        str: "YYYY-MM-DD HH:MM:SS" 형식의 결과 날짜 문자열
+    """
+    # 문자열을 datetime 객체로 파싱
+    dt = datetime.datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
+
+    # relativedelta를 이용해 months만큼 뺀 날짜 계산
+    dt_subtracted = dt - relativedelta(months=months)
+
+    # 최종적으로 문자열 형태로 변환하여 반환
+    return dt_subtracted.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def main():
     """
     간단 테스트: today 함수와 timeframe_to_timedelta 함수 시연.
     """
     print("[test] 현재 시각:", today())
-    print("[test] timeframe_to_timedelta('1d'):", timeframe_to_timedelta("1d"))
-    print("[test] timeframe_to_timedelta('4h'):", timeframe_to_timedelta("4h"))
-    print("[test] timeframe_to_timedelta('15m'):", timeframe_to_timedelta("15m"))
-    print("[test] timeframe_to_timedelta('abc'):", timeframe_to_timedelta("abc"))
+    print("[test] :", subtract_months(today(), 13))
 
 if __name__ == "__main__":
     main()

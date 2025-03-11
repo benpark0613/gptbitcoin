@@ -8,10 +8,10 @@
 import os
 from dotenv import load_dotenv
 
-from utils.date_time import today
+from utils.date_time import today, subtract_months
 
 # 로그 레벨
-LOG_LEVEL = "DEBUG"  # 필요에 따라 "INFO", "WARNING" 등 변경 가능
+LOG_LEVEL = "INFO"  # 필요에 따라 "INFO", "WARNING" 등 변경 가능
 
 # .env 로드
 load_dotenv()
@@ -52,10 +52,11 @@ USE_IS_OOS = True
 #   IS/OOS 구간을 나누는 기준 시점(UTC)
 #   open_time < IS_OOS_BOUNDARY_DATE => IS 구간
 #   open_time >= IS_OOS_BOUNDARY_DATE => OOS 구간
-IS_OOS_BOUNDARY_DATE = "2025-02-10 00:00:00"
+IS_OOS_BOUNDARY_DATE = subtract_months(today(), 1)
 
 # 백테스트 전체 기간 (UTC)
-START_DATE = "2024-11-10 00:00:00"  # 시작
+# START_DATE = "2024-11-10 00:00:00"  # 시작
+START_DATE = subtract_months(today(), 4)
 # END_DATE = "2021-05-20 00:00:00"
 END_DATE = today()                  # 종료 (오늘 날짜를 기본값)
 
