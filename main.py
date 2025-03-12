@@ -183,7 +183,7 @@ def run_main():
                 "is_start_cap", "is_end_cap", "is_return", "is_trades",
                 "is_sharpe", "is_mdd", "is_passed",
                 "oos_start_cap", "oos_end_cap", "oos_return", "oos_trades",
-                "oos_sharpe", "oos_mdd", "oos_last10_slope", "oos_score", "oos_current_position",
+                "oos_sharpe", "oos_mdd", "oos_current_position",
                 "used_indicators"
             ]
             if "is_trades_log" in merged_df.columns:

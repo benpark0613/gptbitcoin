@@ -377,10 +377,7 @@ if __name__ == "__main__":
     """
 
     SEND_EMAIL = True  # 메일 발송 여부
-    MY_COMBO_INFO = {"timeframe": "1d", "combo_params": [{"type": "RSI", "lookback": 2, "overbought": 60, "oversold": 40, "buy_time_delay": 2, "sell_time_delay": 2, "holding_period": 12}]}
-
-
-
+    MY_COMBO_INFO = {"timeframe": "1d", "combo_params": [{"type": "RSI", "lookback": 7, "overbought": 70, "oversold": 30, "buy_time_delay": 0, "sell_time_delay": 0, "holding_period": float('inf')}, {"type": "DMI_ADX", "dmi_period": 20, "adx_threshold": 25, "buy_time_delay": 0, "sell_time_delay": 0, "holding_period": float('inf')}]}
 
 
     # 기본값: IS_OOS_BOUNDARY_DATE ~ 오늘

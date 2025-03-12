@@ -217,8 +217,6 @@ def run_oos(
             "oos_trades_log": combo_trades_log,
             "oos_sharpe": score["Sharpe"],
             "oos_mdd": score["MDD"],
-            "oos_last10_slope": score["Last10Slope"],
-            "oos_score": score["Score"],
             "used_indicators": used_str,
             "oos_current_position": current_position
         }
