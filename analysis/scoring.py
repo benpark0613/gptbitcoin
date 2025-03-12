@@ -1,7 +1,5 @@
 # gptbitcoin/analysis/scoring.py
 # 최소한의 한글 주석, 구글 스타일 docstring
-# 최종 CSV에 필요한 컬럼(시작/최종 자본, 수익률, 트레이드 수, 샤프, MDD, 마지막 10% 구간 기울기)에
-# "Score"를 추가하기 위한 수정 버전.
 
 import math
 from typing import List, Dict

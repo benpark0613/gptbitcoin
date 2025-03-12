@@ -1,15 +1,14 @@
 # gptbitcoin/backtest/combo_generator.py
 # 주석은 한글로 작성 (필요 최소한만), 구글 스타일 Docstring
 # config에 정의된 모든 파라미터를 콤보 생성 시 사용하도록 수정
-# inf인 경우 백테스트에서 “다른 매매 시그널이 나오기 전까지 계속 보유”로 처리
 # 매수/매도 지연은 동일(delay)하게 적용
 # 일반적인 전제: 단기가 장기 이상이면 스킵
 
 import itertools
-from typing import List, Dict, Any
+from typing import List, Dict
 
-# 본 예제에서는 config 패키지의 indicator_config 모듈을 import한다고 가정
 from config.indicator_config import INDICATOR_CONFIG, INDICATOR_COMBO_SIZES
+
 
 def get_ma_param_dicts(ma_config: dict) -> List[dict]:
     """
@@ -368,42 +367,31 @@ def get_psar_param_dicts(psar_config: dict) -> List[dict]:
 
     Args:
         psar_config (dict): PSAR 관련 설정 딕셔너리
-          - 예: {
-              "lookback_periods": [5, 7],
-              "acceleration_step": [0.01, 0.02],
-              "acceleration_max": [0.2],
-              "band_filters": [0, 0.03],
-              "time_delays": [0, 2],
-              "holding_periods": [float('inf')]
-            }
 
     Returns:
         List[dict]: PSAR 파라미터 조합 리스트
     """
     results = []
-    lookbacks = psar_config.get("lookback_periods", [])
     acc_steps = psar_config.get("acceleration_step", [])
     acc_maxes = psar_config.get("acceleration_max", [])
     band_filters = psar_config.get("band_filters", [])
     time_delays = psar_config.get("time_delays", [])
     holding_periods = psar_config.get("holding_periods", [])
 
-    for lb in lookbacks:
-        for st in acc_steps:
-            for mx in acc_maxes:
-                for bf in band_filters:
-                    for td in time_delays:
-                        for hp in holding_periods:
-                            results.append({
-                                "type": "PSAR",
-                                "init_lookback": lb,  # or "lookback" 등 원하는 키 이름
-                                "acc_step": st,
-                                "acc_max": mx,
-                                "band_filter": bf,
-                                "buy_time_delay": td,
-                                "sell_time_delay": td,
-                                "holding_period": hp
-                            })
+    for st in acc_steps:
+        for mx in acc_maxes:
+            for bf in band_filters:
+                for td in time_delays:
+                    for hp in holding_periods:
+                        results.append({
+                            "type": "PSAR",
+                            "acc_step": st,
+                            "acc_max": mx,
+                            "band_filter": bf,
+                            "buy_time_delay": td,
+                            "sell_time_delay": td,
+                            "holding_period": hp
+                        })
     return results
 
 

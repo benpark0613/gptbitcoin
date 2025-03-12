@@ -1,10 +1,11 @@
 # gptbitcoin/indicators/fibo_stuff.py
-# 최소한의 한글 주석
-# 구글 스타일 Docstring
+# 피보나치 핵심 파라미터(피보 레벨, rolling_window)만 사용하여 직접 계산.
 
-from typing import List
-import numpy as np
 import pandas as pd
+import numpy as np
+import pandas_ta as ta
+from typing import List
+
 
 def calc_fibonacci_levels(
     high_s: pd.Series,
@@ -12,34 +13,16 @@ def calc_fibonacci_levels(
     levels: List[float],
     rolling_window: int = 20
 ) -> pd.DataFrame:
-    """
-    피보나치 레벨을 numpy로 rolling 윈도우 계산한다.
+    """피보나치 레벨 계산."""
+    roll_max = high_s.rolling(window=rolling_window, min_periods=rolling_window).max()
+    roll_min = low_s.rolling(window=rolling_window, min_periods=rolling_window).min()
 
-    Args:
-        high_s (pd.Series): 고가
-        low_s (pd.Series): 저가
-        levels (List[float]): 예) [0.382, 0.5, 0.618]
-        rolling_window (int): 윈도우 크기
-
-    Returns:
-        pd.DataFrame: fibo_{lv} 컬럼들을 갖는 DataFrame
-    """
-    h = high_s.to_numpy(dtype=float)
-    l = low_s.to_numpy(dtype=float)
-    n = len(h)
-    if len(l) != n:
-        raise ValueError("길이가 달라서는 안 됨.")
-
-    roll_max = np.full(n, np.nan)
-    roll_min = np.full(n, np.nan)
-    for i in range(n):
-        start = max(0, i - rolling_window + 1)
-        roll_max[i] = h[start:i+1].max()
-        roll_min[i] = l[start:i+1].min()
+    if roll_max is None or roll_min is None:
+        roll_max = pd.Series([np.nan] * len(high_s), index=high_s.index)
+        roll_min = pd.Series([np.nan] * len(low_s), index=low_s.index)
 
     data_dict = {}
     for lv in levels:
-        col_name = f"fibo_{lv}"
-        data_dict[col_name] = roll_min + (roll_max - roll_min) * lv
+        data_dict[f"fibo_{lv}"] = roll_min + (roll_max - roll_min) * lv
 
     return pd.DataFrame(data_dict, index=high_s.index)

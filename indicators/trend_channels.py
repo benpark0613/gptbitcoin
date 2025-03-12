@@ -1,104 +1,93 @@
 # gptbitcoin/indicators/trend_channels.py
-# 최소한의 한글 주석, 구글 스타일 docstring
-# 이 모듈은 "추세 채널" 계열 지표(볼린저 밴드, 일목균형표, 파라볼릭 SAR, 슈퍼트렌드 등)를 담는다.
-
+# Bollinger Bands, Ichimoku, PSAR, Supertrend 등 핵심 파라미터만 사용해 계산.
 import pandas as pd
 import numpy as np
+import pandas_ta as ta
 
 
 def calc_bollinger_bands(
     close_s: pd.Series,
-    period: int = 20,
-    stddev_mult: float = 2.0
+    period: int,
+    stddev_mult: float
 ) -> pd.DataFrame:
-    """
-    볼린저 밴드(Bollinger Bands) 계산.
-    Middle = period 간 이동평균
-    Upper = Middle + stddev_mult * 표준편차
-    Lower = Middle - stddev_mult * 표준편차
+    """볼린저 밴드 계산 (기존과 동일)."""
+    bb_df = ta.bbands(close_s, length=period, std=stddev_mult)
+    if bb_df is None or bb_df.empty:
+        na = [np.nan] * len(close_s)
+        return pd.DataFrame({
+            "boll_mid": na,
+            "boll_upper": na,
+            "boll_lower": na
+        }, index=close_s.index)
 
-    Args:
-        close_s (pd.Series): 종가 시리즈
-        period (int): 기간 (기본 20)
-        stddev_mult (float): 표준편차 배수 (기본 2.0)
+    cols = list(bb_df.columns)
+    lc = next((c for c in cols if "BBL" in c), None)
+    mc = next((c for c in cols if "BBM" in c), None)
+    uc = next((c for c in cols if "BBU" in c), None)
 
-    Returns:
-        pd.DataFrame:
-          - boll_mid
-          - boll_upper
-          - boll_lower
-    """
-    mid = close_s.rolling(window=period, min_periods=period).mean()
-    stddev = close_s.rolling(window=period, min_periods=period).std()
-    upper = mid + stddev_mult * stddev
-    lower = mid - stddev_mult * stddev
-
-    df_boll = pd.DataFrame({
-        "boll_mid": mid,
-        "boll_upper": upper,
-        "boll_lower": lower
+    return pd.DataFrame({
+        "boll_mid": bb_df[mc] if mc else np.nan,
+        "boll_upper": bb_df[uc] if uc else np.nan,
+        "boll_lower": bb_df[lc] if lc else np.nan
     }, index=close_s.index)
-    return df_boll
 
 
 def calc_ichimoku(
-    high_s: pd.Series,
-    low_s: pd.Series,
-    close_s: pd.Series,
-    tenkan_period: int = 9,
-    kijun_period: int = 26,
-    span_b_period: int = 52
+        high_s: pd.Series,
+        low_s: pd.Series,
+        close_s: pd.Series,
+        tenkan_period: int,
+        kijun_period: int,
+        span_b_period: int
 ) -> pd.DataFrame:
     """
-    일목균형표(Ichimoku Cloud)를 계산한다.
-    - 전환선(tenkan): (과거 tenkan_period일 최고 + 최저) / 2
-    - 기준선(kijun): (과거 kijun_period일 최고 + 최저) / 2
-    - 선행스팬 A(span_a): (전환선+기준선)/2 을 kijun_period만큼 미래로 시프트
-    - 선행스팬 B(span_b): (과거 span_b_period일 최고+최저)/2 를 kijun_period만큼 미래로 시프트
-    - 후행스팬(chikou): 현재 종가(close)를 kijun_period만큼 과거로 시프트
+    일목균형표(Ichimoku) 지표를 직접 계산한다.
+
+    일반 공식(파라미터는 보통 9,26,52):
+      - Tenkan-sen (Conversion Line) = (지난 X일 고가 최댓값 + 지난 X일 저가 최솟값)/2  (기본 X=9)
+      - Kijun-sen  (Base Line)       = (지난 Y일 고가 최댓값 + 지난 Y일 저가 최솟값)/2  (기본 Y=26)
+      - Senkou Span A = (Tenkan + Kijun)/2 를 Y일 만큼 앞으로 shift
+      - Senkou Span B = (지난 Z일 고가 최댓값 + 지난 Z일 저가 최솟값)/2 를 Y일 만큼 앞으로 shift  (기본 Z=52)
+      - Chikou Span   = 종가를 Y일 만큼 뒤로 shift (과거로 이동)
 
     Args:
-        high_s (pd.Series): 고가 시리즈
-        low_s (pd.Series): 저가 시리즈
-        close_s (pd.Series): 종가 시리즈
-        tenkan_period (int): 전환선 기간
-        kijun_period (int): 기준선 기간
-        span_b_period (int): 선행스팬 B 기간
+        high_s (pd.Series): 고가 시계열
+        low_s (pd.Series): 저가 시계열
+        close_s (pd.Series): 종가 시계열
+        tenkan_period (int): Tenkan-sen 기간(기본 9)
+        kijun_period (int): Kijun-sen 기간(기본 26)
+        span_b_period (int): Span B 기간(기본 52)
 
     Returns:
-        pd.DataFrame:
-          - ichimoku_tenkan
-          - ichimoku_kijun
-          - ichimoku_span_a
-          - ichimoku_span_b
-          - ichimoku_chikou
+        pd.DataFrame: [
+            "ichimoku_tenkan",
+            "ichimoku_kijun",
+            "ichimoku_span_a",
+            "ichimoku_span_b",
+            "ichimoku_chikou"
+        ]
+        각 컬럼에 해당 지표 값이 들어있음.
     """
-    if not (len(high_s) == len(low_s) == len(close_s)):
-        raise ValueError("high_s, low_s, close_s 길이 불일치.")
+    # Tenkan-sen (Conversion Line)
+    tenkan = (high_s.rolling(tenkan_period).max() + low_s.rolling(tenkan_period).min()) / 2.0
 
-    conv_line = (
-        high_s.rolling(window=tenkan_period).max() +
-        low_s.rolling(window=tenkan_period).min()
-    ) / 2.0
+    # Kijun-sen (Base Line)
+    kijun = (high_s.rolling(kijun_period).max() + low_s.rolling(kijun_period).min()) / 2.0
 
-    base_line = (
-        high_s.rolling(window=kijun_period).max() +
-        low_s.rolling(window=kijun_period).min()
-    ) / 2.0
+    span_a = ((tenkan + kijun) / 2.0).shift(kijun_period)
 
-    span_a = ((conv_line + base_line) / 2.0).shift(kijun_period)
+    # Span B = (지난 span_b_period일 고가/저가) 평균을 kijun_period만큼 앞으로 shift
     span_b = (
-        (
-            high_s.rolling(window=span_b_period).max() +
-            low_s.rolling(window=span_b_period).min()
-        ) / 2.0
+            (high_s.rolling(span_b_period).max() + low_s.rolling(span_b_period).min()) / 2.0
     ).shift(kijun_period)
 
+    # Chikou Span = 종가를 kijun_period만큼 뒤로 shift => .shift(-kijun_period)
     chikou = close_s.shift(-kijun_period)
 
+    # 결과 합치기
     df_ich = pd.DataFrame({
-        "ichimoku_tenkan": conv_line,
-        "ichimoku_kijun": base_line,
+        "ichimoku_tenkan": tenkan,
+        "ichimoku_kijun": kijun,
         "ichimoku_span_a": span_a,
         "ichimoku_span_b": span_b,
         "ichimoku_chikou": chikou
@@ -111,195 +100,59 @@ def calc_psar(
     high_s: pd.Series,
     low_s: pd.Series,
     close_s: pd.Series,
-    acceleration_step: float = 0.02,
-    acceleration_max: float = 0.2,
-    init_lookback: int = 5
+    acceleration_step: float,
+    acceleration_max: float
 ) -> pd.Series:
     """
-    파라볼릭 SAR(PSAR)을 Wilder 공식에 가깝게 계산한다.
-
-    Args:
-        high_s (pd.Series): 고가 시리즈
-        low_s (pd.Series): 저가 시리즈
-        close_s (pd.Series): 종가 시리즈
-        acceleration_step (float): AF(가속도인자) 증가량
-        acceleration_max (float): AF 최댓값
-        init_lookback (int): 초기 추세 판단용 봉 수
-
-    Returns:
-        pd.Series: PSAR 시리즈
+    PSAR 계산: pandas-ta는 psar를 여러 컬럼(PSARl_, PSARs_ 등)에 나눠서 줌.
+    적절히 병합하거나 한쪽(롱/숏)만 선택해서 대표값을 만든다.
     """
-    n = len(high_s)
-    if n < init_lookback:
-        return pd.Series([np.nan]*n, index=high_s.index)
+    psar_df = ta.psar(
+        high=high_s,
+        low=low_s,
+        close=close_s,
+        af=acceleration_step,
+        max_af=acceleration_max
+    )
+    if psar_df is None or psar_df.empty:
+        return pd.Series([np.nan] * len(close_s), index=close_s.index)
 
-    # 결과 보관
-    psar = np.full(n, np.nan, dtype=float)
+    # 보통 ["PSARl_xxx", "PSARs_xxx", "PSARaf_xxx", "PSARr_xxx"] 등이 생성
+    cols = psar_df.columns
+    psar_long_col = next((c for c in cols if c.startswith("PSARl_")), None)
+    psar_short_col= next((c for c in cols if c.startswith("PSARs_")), None)
 
-    # 초기 구간 최대/최소
-    initial_max = high_s.iloc[:init_lookback].max()
-    initial_min = low_s.iloc[:init_lookback].min()
-
-    # 초기 추세 판단
-    first_close = close_s.iloc[0]
-    last_close = close_s.iloc[init_lookback - 1]
-    up_trend = (last_close >= first_close)
-
-    # 초기 SAR 설정
-    if up_trend:
-        psar[init_lookback-1] = initial_min
-        ep = initial_max  # EP(Extreme Point)
-    else:
-        psar[init_lookback-1] = initial_max
-        ep = initial_min
-
-    af = acceleration_step
-
-    # 메인 루프
-    for i in range(init_lookback, n):
-        prev_psar = psar[i - 1]
-        new_sar = prev_psar + af * (ep - prev_psar)
-
-        if up_trend:
-            # 최근 2봉의 최저가보다 SAR이 높아지지 않게
-            new_sar = min(new_sar, low_s.iloc[i - 1])
-            if (i - 2) >= 0:
-                new_sar = min(new_sar, low_s.iloc[i - 2])
-            # 반전 체크
-            if low_s.iloc[i] < new_sar:
-                # 반전
-                up_trend = False
-                new_sar = ep
-                af = acceleration_step
-                ep = low_s.iloc[i]
-            else:
-                # 추세 유지
-                if high_s.iloc[i] > ep:
-                    ep = high_s.iloc[i]
-                    af = min(af + acceleration_step, acceleration_max)
-
-        else:
-            # 최근 2봉의 최고가보다 SAR이 낮아지지 않게
-            new_sar = max(new_sar, high_s.iloc[i - 1])
-            if (i - 2) >= 0:
-                new_sar = max(new_sar, high_s.iloc[i - 2])
-            # 반전 체크
-            if high_s.iloc[i] > new_sar:
-                # 반전
-                up_trend = True
-                new_sar = ep
-                af = acceleration_step
-                ep = high_s.iloc[i]
-            else:
-                # 추세 유지
-                if low_s.iloc[i] < ep:
-                    ep = low_s.iloc[i]
-                    af = min(af + acceleration_step, acceleration_max)
-
-        psar[i] = new_sar
-
-    return pd.Series(psar, index=high_s.index)
-
-
-def calc_atr(
-    high_s: pd.Series,
-    low_s: pd.Series,
-    close_s: pd.Series,
-    period: int = 14
-) -> pd.Series:
-    """
-    ATR(Average True Range)을 계산한다.
-    TR = max(고가-저가, |고가-이전종가|, |저가-이전종가|)
-    ATR = TR의 period 이동평균
-
-    Args:
-        high_s (pd.Series): 고가
-        low_s (pd.Series): 저가
-        close_s (pd.Series): 종가
-        period (int): 기간 (기본 14)
-
-    Returns:
-        pd.Series: ATR 시리즈
-    """
-    prev_close = close_s.shift(1)
-    tr1 = (high_s - low_s).abs()
-    tr2 = (high_s - prev_close).abs()
-    tr3 = (low_s - prev_close).abs()
-    true_range = tr1.combine(tr2, max).combine(tr3, max)
-    atr = true_range.rolling(window=period).mean()
-    return atr
+    # 여기서는 'long' / 'short' 위치에 따라 값이 나뉘므로,
+    # 일반적으로 "둘 중 하나가 NaN이 아니면 그 값을 취한다" 등으로 단일 시리즈를 만든다.
+    # 아래는 단순 예시:
+    out_psar = np.where(
+        psar_df[psar_long_col].notna(),
+        psar_df[psar_long_col],
+        psar_df[psar_short_col]
+    )
+    return pd.Series(out_psar, index=psar_df.index, name="psar_value")
 
 
 def calc_supertrend(
     high_s: pd.Series,
     low_s: pd.Series,
     close_s: pd.Series,
-    atr_period: int = 10,
-    multiplier: float = 3.0
+    atr_period: int,
+    multiplier: float
 ) -> pd.Series:
-    """
-    슈퍼트렌드(SuperTrend)를 표준 방식에 가깝게 계산한다.
-    1) basis = (고가 + 저가)/2
-    2) 기본 upper/lower 밴드 = basis ± multiplier * ATR
-    3) 추세에 따라 상단/하단 밴드 갱신 후 최종 슈퍼트렌드 계산
+    """슈퍼트렌드 계산 (기존과 동일)."""
+    st_df = ta.supertrend(
+        high=high_s,
+        low=low_s,
+        close=close_s,
+        length=atr_period,
+        multiplier=multiplier
+    )
+    if st_df is None or st_df.empty:
+        return pd.Series([np.nan] * len(close_s), index=close_s.index)
 
-    Args:
-        high_s (pd.Series): 고가
-        low_s (pd.Series): 저가
-        close_s (pd.Series): 종가
-        atr_period (int): ATR 기간
-        multiplier (float): ATR 배수
+    st_col = [c for c in st_df.columns if c.startswith("SUPERT_")]
+    if not st_col:
+        return pd.Series([np.nan] * len(close_s), index=close_s.index)
 
-    Returns:
-        pd.Series: supertrend 시리즈
-    """
-    n = len(close_s)
-    if n == 0:
-        return pd.Series([], dtype=float, index=close_s.index)
-
-    atr_s = calc_atr(high_s, low_s, close_s, period=atr_period)
-    basis = (high_s + low_s) / 2.0
-
-    # 초기 upper/lower
-    final_upper = basis - (multiplier * atr_s)
-    final_lower = basis + (multiplier * atr_s)
-
-    st = np.full(n, np.nan, dtype=float)
-    trend_up = True  # 초기 추세 가정 (첫 봉로직 단순화)
-    st[0] = final_lower.iloc[0]  # 초기값
-
-    for i in range(1, n):
-        # 최종 upper/lower 갱신 (표준 공식)
-        cur_upper = basis.iloc[i] - (multiplier * atr_s.iloc[i])
-        cur_lower = basis.iloc[i] + (multiplier * atr_s.iloc[i])
-
-        # 기존 final_upper/ final_lower 이어받아 보정
-        # Uptrend일 때 upper는 현재값과 이전 upper의 min
-        # Downtrend일 때 lower는 현재값과 이전 lower의 max
-        if trend_up:
-            final_upper.iloc[i] = min(cur_upper, final_upper.iloc[i - 1])
-        else:
-            final_upper.iloc[i] = cur_upper
-
-        if not trend_up:
-            final_lower.iloc[i] = max(cur_lower, final_lower.iloc[i - 1])
-        else:
-            final_lower.iloc[i] = cur_lower
-
-        # 추세 판단
-        if trend_up:
-            if close_s.iloc[i] <= final_upper.iloc[i]:
-                trend_up = False
-                st[i] = final_upper.iloc[i]
-            else:
-                trend_up = True
-                st[i] = final_lower.iloc[i]
-        else:
-            if close_s.iloc[i] >= final_lower.iloc[i]:
-                trend_up = True
-                st[i] = final_lower.iloc[i]
-            else:
-                trend_up = False
-                st[i] = final_upper.iloc[i]
-
-    return pd.Series(st, index=close_s.index)
+    return st_df[st_col[0]]

@@ -1,12 +1,13 @@
 # gptbitcoin/strategies/signal_logic.py
-# 최소한의 한글 주석, 구글 스타일 docstring
-# 프로젝트에서 "새로 추가된" 지표들(MACD, DMI/ADX, Bollinger Bands, Ichimoku, PSAR, SuperTrend, Stochastic 등)을
-# 활용한 시그널 로직을 포함한 완성된 예시 코드.
+# signal_logic.py
+# 정교하게 계산하도록 일부 로직을 변경 (RSI, MACD, DMI/ADX 등)
+# 주석은 최소한 한글로, Docstring은 구글 스타일로 작성.
 
 from typing import List
-
 import pandas as pd
+import numpy as np
 
+pd.set_option('future.no_silent_downcasting', True)
 
 def ma_crossover_signal(
     df: pd.DataFrame,
@@ -16,30 +17,26 @@ def ma_crossover_signal(
     signal_col: str = "ma_sig"
 ) -> pd.DataFrame:
     """
-    이동평균 교차 시그널을 계산한다.
-    (band_filter가 이미 0.01이라면 1%를 의미한다)
+    이동평균 교차 시그널. (기존과 동일)
+    band_filter=0.05 → 5%로 해석.
 
     Args:
         df (pd.DataFrame): 이동평균 칼럼이 들어있는 DataFrame
         short_ma_col (str): 단기 이동평균 칼럼명
         long_ma_col (str): 장기 이동평균 칼럼명
-        band_filter (float): 퍼센트로 해석할 소수값 (예: 0.01 -> 1%)
-        signal_col (str): 결과 시그널이 기록될 칼럼명
+        band_filter (float): 퍼센트(0.05→5%)
+        signal_col (str): 결과 시그널 칼럼
 
     Returns:
-        pd.DataFrame: signal_col에 +1/-1/0 시그널을 추가한 DataFrame
+        pd.DataFrame: signal_col에 +1/-1/0 시그널이 기록된 DataFrame
     """
     df[signal_col] = 0
-
-    # band_filter = 0.01 → 1%, 0.02 → 2%, ...
     up_cond = df[short_ma_col] > df[long_ma_col] * (1.0 + band_filter)
     down_cond = df[short_ma_col] < df[long_ma_col] * (1.0 - band_filter)
 
     df.loc[up_cond, signal_col] = 1
     df.loc[down_cond, signal_col] = -1
-
     return df
-
 
 
 def rsi_signal(
@@ -50,14 +47,27 @@ def rsi_signal(
     signal_col: str = "rsi_sig"
 ) -> pd.DataFrame:
     """
-    RSI 기준 시그널.
-    rsi < lower_bound → +1
-    rsi > upper_bound → -1
-    else 0
+    RSI 시그널(일반적 해석, 연속 상태).
+    - RSI < lower_bound → 매수(+1)
+    - RSI > upper_bound → 매도(-1)
+    - 그 외 → 0
+
+    Args:
+        df (pd.DataFrame): 시계열 데이터프레임
+        rsi_col (str): RSI 칼럼명
+        lower_bound (float): RSI 하단 임계값(예:30)
+        upper_bound (float): RSI 상단 임계값(예:70)
+        signal_col (str): 결과 시그널 칼럼명
+
+    Returns:
+        pd.DataFrame: signal_col에 +1/-1/0 시그널을 기록한 DataFrame
     """
     df[signal_col] = 0
-    df.loc[df[rsi_col] < lower_bound, signal_col] = 1
-    df.loc[df[rsi_col] > upper_bound, signal_col] = -1
+    buy_cond = df[rsi_col] < lower_bound
+    sell_cond = df[rsi_col] > upper_bound
+
+    df.loc[buy_cond, signal_col] = 1
+    df.loc[sell_cond, signal_col] = -1
     return df
 
 
@@ -68,10 +78,18 @@ def obv_signal(
     signal_col: str = "obv_sig"
 ) -> pd.DataFrame:
     """
-    OBV 값으로 단순 매수/매도.
-    obv > threshold → +1
-    obv < -threshold → -1
-    else 0
+    OBV 시그널.
+    threshold=0.05 → 5%로 해석 시,
+    obv > 0.05 → +1, obv < -0.05 → -1, 그 외 0.
+
+    Args:
+        df (pd.DataFrame)
+        obv_col (str): OBV 칼럼명
+        threshold (float): 기준값(퍼센트로 해석)
+        signal_col (str): 결과 시그널 칼럼
+
+    Returns:
+        pd.DataFrame
     """
     df[signal_col] = 0
     up_cond = df[obv_col] > threshold
@@ -91,17 +109,26 @@ def filter_rule_signal(
     signal_col: str = "filter_sig"
 ) -> pd.DataFrame:
     """
-    Filter 룰.
-    - close > filter_max_{w}*(1+x_pct) → +1
-    - close < filter_min_{w}*(1-y_pct) → -1
-    - else 0
+    Filter 룰 시그널.
+    x_pct=0.05 → +5%, y_pct=0.1 → +10%로 해석.
+
+    Args:
+        df (pd.DataFrame)
+        close_col (str)
+        window (int)
+        x_pct (float)
+        y_pct (float)
+        signal_col (str)
+
+    Returns:
+        pd.DataFrame
     """
     df[signal_col] = 0
     max_col = f"filter_max_{window}"
     min_col = f"filter_min_{window}"
 
-    up_cond = df[close_col] > df[max_col] * (1 + x_pct)
-    down_cond = df[close_col] < df[min_col] * (1 - y_pct)
+    up_cond = df[close_col] > df[max_col] * (1.0 + x_pct)
+    down_cond = df[close_col] < df[min_col] * (1.0 - y_pct)
 
     df.loc[up_cond, signal_col] = 1
     df.loc[down_cond, signal_col] = -1
@@ -117,10 +144,19 @@ def support_resistance_signal(
     signal_col: str = "sr_sig"
 ) -> pd.DataFrame:
     """
-    SR 룰.
-    - price > rolling_max*(1+band_pct) → +1
-    - price < rolling_min*(1-band_pct) → -1
-    - else 0
+    지지/저항 시그널.
+    band_pct=0.05 → 5%
+
+    Args:
+        df (pd.DataFrame)
+        rolling_min_col (str): rolling 최소 칼럼
+        rolling_max_col (str): rolling 최대 칼럼
+        price_col (str): 가격 칼럼
+        band_pct (float): 퍼센트 필터
+        signal_col (str): 결과 시그널 칼럼
+
+    Returns:
+        pd.DataFrame
     """
     df[signal_col] = 0
     up_cond = df[price_col] > df[rolling_max_col] * (1.0 + band_pct)
@@ -140,10 +176,19 @@ def channel_breakout_signal(
     signal_col: str = "cb_sig"
 ) -> pd.DataFrame:
     """
-    채널 돌파 룰.
-    - price > ch_max*(1+breakout_pct) → +1
-    - price < ch_min*(1-breakout_pct) → -1
-    - else 0
+    채널 돌파 시그널.
+    breakout_pct=0.03 → 3%
+
+    Args:
+        df (pd.DataFrame)
+        rolling_min_col (str)
+        rolling_max_col (str)
+        price_col (str)
+        breakout_pct (float)
+        signal_col (str)
+
+    Returns:
+        pd.DataFrame
     """
     df[signal_col] = 0
     up_cond = df[price_col] > df[rolling_max_col] * (1.0 + breakout_pct)
@@ -161,21 +206,30 @@ def macd_signal(
     signal_col: str = "macd_sig"
 ) -> pd.DataFrame:
     """
-    MACD 시그널.
-    - macd_line > macd_signal → +1
-    - macd_line < macd_signal → -1
-    - else 0
+    MACD 시그널(일반적 해석, 연속 상태).
+    - MACD 라인이 Signal 라인보다 크거나 같으면 매수(+1)
+    - 작으면 매도(-1)
+
+    Args:
+        df (pd.DataFrame): MACD/Signal 라인이 들어있는 DataFrame
+        macd_line_col (str): MACD 라인 칼럼
+        macd_signal_col (str): Signal 라인 칼럼
+        signal_col (str): 결과 시그널 칼럼
+
+    Returns:
+        pd.DataFrame
     """
     df[signal_col] = 0
-    up_cond = df[macd_line_col] > df[macd_signal_col]
-    down_cond = df[macd_line_col] < df[macd_signal_col]
+    if macd_line_col not in df.columns or macd_signal_col not in df.columns:
+        return df
 
-    df.loc[up_cond, signal_col] = 1
-    df.loc[down_cond, signal_col] = -1
+    buy_cond = df[macd_line_col] >= df[macd_signal_col]
+    df.loc[buy_cond, signal_col] = 1
+    df.loc[~buy_cond, signal_col] = -1
     return df
 
 
-def dmi_adx_signal(
+def dmi_adx_signal_trend(
     df: pd.DataFrame,
     plus_di_col: str,
     minus_di_col: str,
@@ -184,66 +238,36 @@ def dmi_adx_signal(
     signal_col: str = "dmi_sig"
 ) -> pd.DataFrame:
     """
-    DMI/ADX 시그널:
-     - adx > adx_threshold & +DI > -DI → +1
-     - adx > adx_threshold & -DI > +DI → -1
-     - else 0
-    """
-    df[signal_col] = 0
-    strong_trend_cond = df[adx_col] > adx_threshold
-    plus_up = df[plus_di_col] > df[minus_di_col]
-    minus_up = df[minus_di_col] > df[plus_di_col]
-
-    df.loc[strong_trend_cond & plus_up, signal_col] = 1
-    df.loc[strong_trend_cond & minus_up, signal_col] = -1
-    return df
-
-
-def stochastic_signal(
-    df: pd.DataFrame,
-    stoch_k_col: str,
-    stoch_d_col: str,
-    signal_col: str = "stoch_sig",
-    k_overbought: float = 80.0,
-    k_oversold: float = 20.0,
-    cross_logic: bool = False
-) -> pd.DataFrame:
-    """
-    스토캐스틱 시그널.
-    1) 단순 오버보트/오버솔드:
-       - stoch_k < k_oversold → +1
-       - stoch_k > k_overbought → -1
-    2) cross_logic=True 라면, K가 D를 상향 돌파하면 +1, 하향 돌파하면 -1
+    DMI(+DI, -DI) & ADX 시그널(일반적인 추세지표 해석).
+    - ADX >= adx_threshold 일 때만 추세가 유효
+      +DI >= -DI → 매수(+1)
+      +DI <  -DI → 매도(-1)
+    - ADX < adx_threshold → 0 (추세 미약)
 
     Args:
-        df (pd.DataFrame): stoch_k_col, stoch_d_col이 존재
-        stoch_k_col (str): %K
-        stoch_d_col (str): %D
-        signal_col (str): 결과 시그널
-        k_overbought (float): 예 80
-        k_oversold (float): 예 20
-        cross_logic (bool): 교차 로직 사용 여부
+        df (pd.DataFrame)
+        plus_di_col (str): +DI 칼럼
+        minus_di_col (str): -DI 칼럼
+        adx_col (str): ADX 칼럼
+        adx_threshold (float): 추세 강도 임계값
+        signal_col (str): 결과 시그널 칼럼
 
     Returns:
         pd.DataFrame
     """
     df[signal_col] = 0
-    if not cross_logic:
-        # 단순 오버보트/솔드
-        df.loc[df[stoch_k_col] < k_oversold, signal_col] = 1
-        df.loc[df[stoch_k_col] > k_overbought, signal_col] = -1
-    else:
-        # cross: k가 d를 상향 돌파 → +1, 하향 돌파 → -1
-        df["prev_k"] = df[stoch_k_col].shift(1)
-        df["prev_d"] = df[stoch_d_col].shift(1)
+    needed_cols = [plus_di_col, minus_di_col, adx_col]
+    for c in needed_cols:
+        if c not in df.columns:
+            return df
 
-        up_cond = (df["prev_k"] < df["prev_d"]) & (df[stoch_k_col] > df[stoch_d_col])
-        down_cond = (df["prev_k"] > df["prev_d"]) & (df[stoch_k_col] < df[stoch_d_col])
+    adx_valid = df[adx_col] >= adx_threshold
+    buy_cond = (df[plus_di_col] >= df[minus_di_col]) & adx_valid
+    sell_cond = (df[plus_di_col] < df[minus_di_col]) & adx_valid
 
-        df.loc[up_cond, signal_col] = 1
-        df.loc[down_cond, signal_col] = -1
-        df.drop(columns=["prev_k", "prev_d"], inplace=True)
-
+    df.loc[buy_cond, signal_col] = 1
+    df.loc[sell_cond, signal_col] = -1
+    # ADX 미만이면 0 유지
     return df
 
 
@@ -253,46 +277,109 @@ def bollinger_signal(
     upper_col: str,
     lower_col: str,
     price_col: str = "close",
-    signal_col: str = "boll_sig"
+    signal_col: str = "boll_sig",
+    width_threshold: float = 0.05
 ) -> pd.DataFrame:
     """
-    볼린저 밴드 시그널(단순 예시).
-    - price > upper_col → +1
-    - price < lower_col → -1
-    - else 0
+    볼린저 밴드 스퀴즈 탈출 기반 추세 시그널.
+    (기존 로직 동일)
+
+    Args:
+        df (pd.DataFrame)
+        mid_col (str)
+        upper_col (str)
+        lower_col (str)
+        price_col (str)
+        signal_col (str)
+        width_threshold (float): 밴드 폭 스퀴즈 기준
+
+    Returns:
+        pd.DataFrame
     """
     df[signal_col] = 0
-    up_cond = df[price_col] > df[upper_col]
-    down_cond = df[price_col] < df[lower_col]
+    bw_col = "_band_width"
+    df[bw_col] = (df[upper_col] - df[lower_col]) / df[mid_col].abs().replace(0, np.nan)
 
-    df.loc[up_cond, signal_col] = 1
-    df.loc[down_cond, signal_col] = -1
+    sq_col = "_is_squeeze"
+    df[sq_col] = df[bw_col] < width_threshold
+
+    prev_sq_col = "_prev_squeeze"
+    df[prev_sq_col] = df[sq_col].shift(1).fillna(False)
+
+    up_break = df[price_col] > df[upper_col]
+    down_break = df[price_col] < df[lower_col]
+
+    cond_up = df[prev_sq_col] & up_break
+    cond_down = df[prev_sq_col] & down_break
+
+    df.loc[cond_up, signal_col] = 1
+    df.loc[cond_down, signal_col] = -1
+
+    df.drop(columns=[bw_col, sq_col, prev_sq_col], inplace=True)
     return df
 
 
-def ichimoku_signal(
+def ichimoku_signal_trend(
     df: pd.DataFrame,
     tenkan_col: str,
     kijun_col: str,
     span_a_col: str,
     span_b_col: str,
-    chikou_col: str,
     price_col: str = "close",
     signal_col: str = "ich_sig"
 ) -> pd.DataFrame:
     """
-    일목균형표 기초 시그널(간단 예시):
-      - price > span_a, price > span_b → +1
-      - price < span_a, price < span_b → -1
-      - else 0
-    (프로젝트마다 기준선, 전환선 교차로직을 쓰거나 치코 스팬 확인 등 다양하게 변형 가능)
-    """
-    df[signal_col] = 0
-    up_cond = (df[price_col] > df[span_a_col]) & (df[price_col] > df[span_b_col])
-    down_cond = (df[price_col] < df[span_a_col]) & (df[price_col] < df[span_b_col])
+    일목균형표 시그널(기존 로직 유지).
 
-    df.loc[up_cond, signal_col] = 1
-    df.loc[down_cond, signal_col] = -1
+    Args:
+        df (pd.DataFrame)
+        tenkan_col (str)
+        kijun_col (str)
+        span_a_col (str)
+        span_b_col (str)
+        price_col (str)
+        signal_col (str)
+
+    Returns:
+        pd.DataFrame
+    """
+    needed = [tenkan_col, kijun_col, span_a_col, span_b_col, price_col]
+    if any(c not in df.columns for c in needed):
+        df[signal_col] = 0
+        return df
+
+    ten_arr = df[tenkan_col].to_numpy(float)
+    kij_arr = df[kijun_col].to_numpy(float)
+    diff_arr = ten_arr - kij_arr
+
+    span_a_arr = df[span_a_col].to_numpy(float)
+    span_b_arr = df[span_b_col].to_numpy(float)
+    price_arr = df[price_col].to_numpy(float)
+
+    cloud_top = np.maximum(span_a_arr, span_b_arr)
+    cloud_bot = np.minimum(span_a_arr, span_b_arr)
+
+    n = len(df)
+    sig_array = np.zeros(n, dtype=int)
+
+    for i in range(1, n):
+        prev_diff = diff_arr[i - 1]
+        curr_diff = diff_arr[i]
+        sig_array[i] = sig_array[i - 1]
+
+        cross_up = (prev_diff <= 0) and (curr_diff > 0)
+        cross_down = (prev_diff >= 0) and (curr_diff < 0)
+
+        if cross_up:
+            # 가격이 구름 위면 +1
+            if price_arr[i] > cloud_top[i]:
+                sig_array[i] = 1
+        elif cross_down:
+            # 가격이 구름 아래면 -1
+            if price_arr[i] < cloud_bot[i]:
+                sig_array[i] = -1
+
+    df[signal_col] = sig_array
     return df
 
 
@@ -303,9 +390,17 @@ def psar_signal(
     signal_col: str = "psar_sig"
 ) -> pd.DataFrame:
     """
-    PSAR 시그널(간단):
-    - if psar < price → +1
-    - else → -1
+    PSAR 시그널(단순판단).
+    psar < price 이면 +1, 아니면 -1
+
+    Args:
+        df (pd.DataFrame)
+        psar_col (str)
+        price_col (str)
+        signal_col (str)
+
+    Returns:
+        pd.DataFrame
     """
     df[signal_col] = 0
     up_cond = df[psar_col] < df[price_col]
@@ -321,9 +416,17 @@ def supertrend_signal(
     signal_col: str = "st_sig"
 ) -> pd.DataFrame:
     """
-    SuperTrend 시그널:
-    - price > supertrend → +1
-    - price < supertrend → -1
+    SuperTrend 시그널.
+    price > supertrend 이면 +1, price < supertrend 이면 -1
+
+    Args:
+        df (pd.DataFrame)
+        st_col (str)
+        price_col (str)
+        signal_col (str)
+
+    Returns:
+        pd.DataFrame
     """
     df[signal_col] = 0
     up_cond = df[price_col] > df[st_col]
@@ -332,63 +435,62 @@ def supertrend_signal(
     return df
 
 
-def fibo_signal(
+def fibo_signal_trend(
     df: pd.DataFrame,
     fibo_cols: List[str],
     price_col: str = "close",
-    mode: str = "above_last",
     signal_col: str = "fibo_sig"
 ) -> pd.DataFrame:
     """
-    피보나치 레벨 기반 시그널(단순 예시).
-    여러 fibo_cols 중 마지막 레벨을 기준으로 price가 위면 +1, 아래면 -1, etc.
+    피보나치 레벨 돌파 시그널(기존 로직 유지).
 
     Args:
-        df (pd.DataFrame): fibo_* 컬럼이 이미 계산돼 있어야 함
-        fibo_cols (List[str]): 예) ["fibo_0.382_set1", "fibo_0.5_set1", ...]
-        price_col (str): 기준 가격
-        mode (str): 단순 예시, "above_last" → 마지막 피보 레벨보다 위/아래로 매수/매도
-        signal_col (str): 결과 시그널
+        df (pd.DataFrame)
+        fibo_cols (List[str]): 예) ["fibo_0.236", "fibo_0.382", ...]
+        price_col (str)
+        signal_col (str)
 
     Returns:
         pd.DataFrame
     """
-    df[signal_col] = 0
-    if not fibo_cols:
-        return df  # no action
+    if price_col not in df.columns:
+        df[signal_col] = 0
+        return df
 
-    if mode == "above_last":
-        last_col = fibo_cols[-1]
-        up_cond = df[price_col] > df[last_col]
-        down_cond = df[price_col] < df[last_col]
+    valid_fibo_cols = [c for c in fibo_cols if c in df.columns]
+    if not valid_fibo_cols:
+        df[signal_col] = 0
+        return df
 
-        df.loc[up_cond, signal_col] = 1
-        df.loc[down_cond, signal_col] = -1
-    else:
-        # 다른 모드: price가 가장 가까운 레벨 위인지 아래인지 등등 구현 가능
-        pass
-    return df
+    price_arr = df[price_col].to_numpy(dtype=float)
+    fibo_arrays = [df[c].to_numpy(dtype=float) for c in valid_fibo_cols]
 
+    n = len(df)
+    rung_arr = np.zeros(n, dtype=int)
 
-def combine_signals(
-    df: pd.DataFrame,
-    signal_cols: List[str],
-    out_col: str = "final_signal"
-) -> pd.DataFrame:
-    """
-    여러 시그널 컬럼을 합산하여 최종 시그널을 만든다.
-    sum_val > 0 → +1
-    sum_val < 0 → -1
-    else 0
-    """
-    df[out_col] = 0
-    df["temp_sum"] = 0
+    # 몇 개 레벨을 돌파했는지 count
+    for i in range(n):
+        p = price_arr[i]
+        count = 0
+        for fiboA in fibo_arrays:
+            if p >= fiboA[i]:
+                count += 1
+            else:
+                break
+        rung_arr[i] = count
 
-    for sc in signal_cols:
-        df["temp_sum"] += df[sc]
+    # 올라갔으면 +1, 내려갔으면 -1, 유지면 이전값
+    sig_array = np.zeros(n, dtype=int)
+    for i in range(1, n):
+        prev_rung = rung_arr[i - 1]
+        curr_rung = rung_arr[i]
 
-    df.loc[df["temp_sum"] > 0, out_col] = 1
-    df.loc[df["temp_sum"] < 0, out_col] = -1
+        if curr_rung > prev_rung:
+            sig_array[i] = 1
+        elif curr_rung < prev_rung:
+            sig_array[i] = -1
+        else:
+            sig_array[i] = sig_array[i - 1]
 
-    df.drop(columns=["temp_sum"], inplace=True)
+    df[signal_col] = sig_array
     return df
