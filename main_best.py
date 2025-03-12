@@ -382,7 +382,7 @@ if __name__ == "__main__":
 
     # 기본값: IS_OOS_BOUNDARY_DATE ~ 오늘
     MY_START_DATE = IS_OOS_BOUNDARY_DATE  # 예: '2023-01-01 00:00:00'
-    INTERVAL_SECONDS = 60
+    INTERVAL_SECONDS = 300
     ALERT_ON_SAME_POSITION = False
 
     logging.info(

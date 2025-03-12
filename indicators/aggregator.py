@@ -5,36 +5,33 @@
 # 컬럼을 매번 하나씩 추가하지 않고, dict에 모아 두었다가 pd.concat으로 한 번에 추가하여
 # DataFrame 조각화(Fragmentation) 경고를 줄인다.
 
+from typing import Optional, Dict
+
 import pandas as pd
-from typing import Optional, Dict, List
 
 # config
 from config.indicator_config import INDICATOR_CONFIG
-
 # 분할된 지표 계산 모듈들
 from .basic_indicators import (
     calc_sma_series,
-    calc_ema_series,
     calc_rsi_series,
     calc_obv_series,
     calc_filter_minmax,
     calc_sr_minmax,
     calc_cb_minmax
 )
+from .fibo_stuff import (
+    calc_fibonacci_levels,
+)
 from .momentum_indicators import (
     calc_macd,
     calc_dmi_adx,
-    calc_stochastic
 )
 from .trend_channels import (
     calc_bollinger_bands,
     calc_ichimoku,
     calc_psar,
     calc_supertrend
-)
-from .fibo_stuff import (
-    calc_fibonacci_levels,
-    calc_fibonacci_retracement_once
 )
 
 
@@ -65,8 +62,6 @@ def calc_all_indicators(
         raise ValueError("DataFrame에 'close'와 'volume' 칼럼이 필요합니다.")
 
     # 결과를 담을 dict
-    # ex) new_cols_dict["ma_5"] = 시리즈, ...
-    # 마지막에 pd.concat([df, pd.DataFrame(new_cols_dict, ...)], axis=1)
     new_cols_dict = {}
 
     # ----------------------------------------------------------------
@@ -78,11 +73,11 @@ def calc_all_indicators(
         lp_list = ma_cfg.get("long_ma_periods", [])
         for sp in sp_list:
             col_sp = f"ma_{sp}"
-            if col_sp not in df.columns:
+            if (col_sp not in df.columns) and (col_sp not in new_cols_dict):
                 new_cols_dict[col_sp] = calc_sma_series(df["close"], sp)
         for lp in lp_list:
             col_lp = f"ma_{lp}"
-            if col_lp not in df.columns:
+            if (col_lp not in df.columns) and (col_lp not in new_cols_dict):
                 new_cols_dict[col_lp] = calc_sma_series(df["close"], lp)
 
     if "RSI" in cfg:
@@ -90,23 +85,20 @@ def calc_all_indicators(
         rsi_list = rsi_cfg.get("lookback_periods", [])
         for lb in rsi_list:
             col_rsi = f"rsi_{lb}"
-            if col_rsi not in df.columns:
+            if (col_rsi not in df.columns) and (col_rsi not in new_cols_dict):
                 new_cols_dict[col_rsi] = calc_rsi_series(df["close"], lb)
 
     if "OBV" in cfg:
         obv_cfg = cfg["OBV"]
-        if "obv_raw" not in df.columns:
-            # obv_raw 자체도 df에 없으면 추가
+        # obv_raw
+        if ("obv_raw" not in df.columns) and ("obv_raw" not in new_cols_dict):
             new_cols_dict["obv_raw"] = calc_obv_series(df["close"], df["volume"])
         sp_list = obv_cfg.get("short_ma_periods", [])
         lp_list = obv_cfg.get("long_ma_periods", [])
-        # obv_sma
         for p in set(sp_list + lp_list):
             col_obv_sma = f"obv_sma_{p}"
-            if col_obv_sma not in df.columns:
-                # 기반은 obv_raw (이미 df에 없으면 위에서 new_cols_dict에 추가됨)
-                # concat 이후에 df에 생기므로, obv_raw를 df에 있거나 new_cols_dict에 있거나...
-                # 일단 safe: 원본이나 new_cols_dict에서 가져온다.
+            if (col_obv_sma not in df.columns) and (col_obv_sma not in new_cols_dict):
+                # obv_raw는 df에 없으면 new_cols_dict["obv_raw"]가 존재
                 base_series = df["obv_raw"] if "obv_raw" in df.columns else new_cols_dict["obv_raw"]
                 new_cols_dict[col_obv_sma] = base_series.rolling(window=p, min_periods=p).mean()
 
@@ -115,8 +107,7 @@ def calc_all_indicators(
         for w in flb_list:
             min_c = f"filter_min_{w}"
             max_c = f"filter_max_{w}"
-            # 이미 df나 new_cols_dict에 없으면 생성
-            if min_c not in df.columns and min_c not in new_cols_dict:
+            if (min_c not in df.columns) and (min_c not in new_cols_dict):
                 df_flt = calc_filter_minmax(df["close"], w)
                 for ccol in df_flt.columns:
                     if (ccol not in df.columns) and (ccol not in new_cols_dict):
@@ -145,7 +136,7 @@ def calc_all_indicators(
                         new_cols_dict[ccol] = df_cb[ccol]
 
     # ----------------------------------------------------------------
-    # 2) Momentum Indicators (MACD, DMI_ADX, Stochastic)
+    # 2) Momentum Indicators (MACD, DMI_ADX)
     # ----------------------------------------------------------------
     if "MACD" in cfg:
         macd_cfg = cfg["MACD"]
@@ -160,7 +151,7 @@ def calc_all_indicators(
                     col_line = f"macd_line_{f}_{s}_{sg}"
                     col_sig = f"macd_signal_{f}_{s}_{sg}"
                     col_hist = f"macd_hist_{f}_{s}_{sg}"
-                    if col_line not in df.columns and col_line not in new_cols_dict:
+                    if ((col_line not in df.columns) and (col_line not in new_cols_dict)):
                         macd_df = calc_macd(df["close"], f, s, sg)
                         new_cols_dict[col_line] = macd_df["macd_line"]
                         new_cols_dict[col_sig] = macd_df["macd_signal"]
@@ -173,27 +164,14 @@ def calc_all_indicators(
             plus_c = f"plus_di_{dp}"
             minus_c = f"minus_di_{dp}"
             adx_c = f"adx_{dp}"
-            if (plus_c not in df.columns) and (plus_c not in new_cols_dict):
+            if ((plus_c not in df.columns) and (plus_c not in new_cols_dict)):
                 dmi_df = calc_dmi_adx(df["high"], df["low"], df["close"], dp)
                 new_cols_dict[plus_c] = dmi_df["plus_di"]
                 new_cols_dict[minus_c] = dmi_df["minus_di"]
                 new_cols_dict[adx_c] = dmi_df["adx"]
 
-    if "STOCH" in cfg:
-        st_cfg = cfg["STOCH"]
-        k_ps = st_cfg.get("k_periods", [])
-        d_ps = st_cfg.get("d_periods", [])
-        for k_p in k_ps:
-            for d_p in d_ps:
-                k_col = f"stoch_k_{k_p}_{d_p}"
-                d_col = f"stoch_d_{k_p}_{d_p}"
-                if (k_col not in df.columns) and (k_col not in new_cols_dict):
-                    st_df = calc_stochastic(df["high"], df["low"], df["close"], k_p, d_p)
-                    new_cols_dict[k_col] = st_df["stoch_k"]
-                    new_cols_dict[d_col] = st_df["stoch_d"]
-
     # ----------------------------------------------------------------
-    # 3) Trend Channels (Bollinger, Ichimoku, PSAR, SuperTrend)
+    # 3) Trend Channels (BOLL, Ichimoku, PSAR, SuperTrend)
     # ----------------------------------------------------------------
     if "BOLL" in cfg:
         boll_cfg = cfg["BOLL"]
@@ -204,7 +182,7 @@ def calc_all_indicators(
                 mid_c = f"boll_mid_{lb}_{sd}"
                 up_c = f"boll_upper_{lb}_{sd}"
                 lo_c = f"boll_lower_{lb}_{sd}"
-                if (mid_c not in df.columns) and (mid_c not in new_cols_dict):
+                if ((mid_c not in df.columns) and (mid_c not in new_cols_dict)):
                     bdf = calc_bollinger_bands(df["close"], lb, sd)
                     new_cols_dict[mid_c] = bdf["boll_mid"]
                     new_cols_dict[up_c] = bdf["boll_upper"]
@@ -224,8 +202,8 @@ def calc_all_indicators(
                     spa_col = f"{prefix}_span_a"
                     spb_col = f"{prefix}_span_b"
                     chi_col = f"{prefix}_chikou"
-                    if (ten_col not in df.columns) and (ten_col not in new_cols_dict):
-                        ich_df = calc_ichimoku(df["high"], df["low"], t, k, sp)
+                    if ((ten_col not in df.columns) and (ten_col not in new_cols_dict)):
+                        ich_df = calc_ichimoku(df["high"], df["low"], df["close"], t, k, sp)
                         new_cols_dict[ten_col] = ich_df["ichimoku_tenkan"]
                         new_cols_dict[kij_col] = ich_df["ichimoku_kijun"]
                         new_cols_dict[spa_col] = ich_df["ichimoku_span_a"]
@@ -234,13 +212,24 @@ def calc_all_indicators(
 
     if "PSAR" in cfg:
         psar_cfg = cfg["PSAR"]
+        lb_list = psar_cfg.get("lookback_periods", [])
         steps = psar_cfg.get("acceleration_step", [])
         maxes = psar_cfg.get("acceleration_max", [])
-        for stp in steps:
-            for mx in maxes:
-                psar_col = f"psar_{stp}_{mx}"
-                if (psar_col not in df.columns) and (psar_col not in new_cols_dict):
-                    new_cols_dict[psar_col] = calc_psar(df["high"], df["low"], stp, mx)
+
+        for lb in lb_list:
+            for stp in steps:
+                for mx in maxes:
+                    # 컬럼명에 lookback까지 포함해서 구분
+                    psar_col = f"psar_{lb}_{stp}_{mx}"
+                    if (psar_col not in df.columns) and (psar_col not in new_cols_dict):
+                        new_cols_dict[psar_col] = calc_psar(
+                            df["high"],
+                            df["low"],
+                            df["close"],
+                            acceleration_step=stp,
+                            acceleration_max=mx,
+                            init_lookback=lb
+                        )
 
     if "SUPERTREND" in cfg:
         st_cfg = cfg["SUPERTREND"]
@@ -249,8 +238,10 @@ def calc_all_indicators(
         for ap in atr_ps:
             for mt in mults:
                 st_col = f"supertrend_{ap}_{mt}"
-                if (st_col not in df.columns) and (st_col not in new_cols_dict):
-                    new_cols_dict[st_col] = calc_supertrend(df["high"], df["low"], df["close"], ap, mt)
+                if ((st_col not in df.columns) and (st_col not in new_cols_dict)):
+                    new_cols_dict[st_col] = calc_supertrend(
+                        df["high"], df["low"], df["close"], ap, mt
+                    )
 
     # ----------------------------------------------------------------
     # 4) Fibonacci Stuff
@@ -258,11 +249,17 @@ def calc_all_indicators(
     if "FIBO" in cfg:
         fibo_cfg = cfg["FIBO"]
         level_sets = fibo_cfg.get("levels", [])
-        mode = fibo_cfg.get("mode", "rolling")  # 예: "rolling"/"cumulative"/"latest"
+        rolling_window = fibo_cfg.get("rolling_window", 20)
+
         for i, lvset in enumerate(level_sets):
-            fib_df = calc_fibonacci_levels(df["high"], df["low"], lvset, mode=mode)
+            fib_df = calc_fibonacci_levels(
+                high_s=df["high"],
+                low_s=df["low"],
+                levels=lvset,
+                rolling_window=rolling_window
+            )
             for col in fib_df.columns:
-                new_col = f"{col}_set{i+1}"
+                new_col = f"{col}_set{i + 1}"
                 if (new_col not in df.columns) and (new_col not in new_cols_dict):
                     new_cols_dict[new_col] = fib_df[col]
 

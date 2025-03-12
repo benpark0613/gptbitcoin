@@ -1,12 +1,10 @@
 # gptbitcoin/indicators/momentum_indicators.py
-# 최소한의 한글 주석, 구글 스타일 docstring
-# 이 모듈은 "모멘텀/추세" 지표 그룹(예: MACD, DMI/ADX, 스토캐스틱 등)을 담는다.
-# (프로젝트 요구사항에 따라 실제로 사용할 지표만 남기면 됨)
+# 최소한의 한글 주석
+# 구글 스타일 Docstring
+# 모멘텀/추세 지표 (예: MACD, DMI/ADX 등)
 
-import pandas as pd
 import numpy as np
-from typing import Optional, Dict
-
+import pandas as pd
 
 def calc_macd(
     close_s: pd.Series,
@@ -15,38 +13,40 @@ def calc_macd(
     signal_period: int = 9
 ) -> pd.DataFrame:
     """
-    MACD (Moving Average Convergence / Divergence) 지표를 계산한다.
-    - MACD 라인 = EMA(fast_period) - EMA(slow_period)
-    - 시그널 라인 = MACD 라인의 EMA(signal_period)
-    - 히스토그램 = MACD 라인 - 시그널 라인
+    MACD를 numpy 방식으로 직접 계산한다.
 
     Args:
-        close_s (pd.Series): 종가 시리즈
-        fast_period (int): 단기 EMA 기간 (기본 12)
-        slow_period (int): 장기 EMA 기간 (기본 26)
-        signal_period (int): 시그널 EMA 기간 (기본 9)
+        close_s (pd.Series): 종가
+        fast_period (int): 단기 EMA 기간
+        slow_period (int): 장기 EMA 기간
+        signal_period (int): 시그널 EMA 기간
 
     Returns:
-        pd.DataFrame: 다음 컬럼을 갖는 DataFrame
-          - macd_line
-          - macd_signal
-          - macd_hist
+        pd.DataFrame: macd_line, macd_signal, macd_hist
     """
-    # 지수 이동평균 함수
-    def ema(series: pd.Series, period: int) -> pd.Series:
-        return series.ewm(span=period, adjust=False).mean()
+    arr = close_s.to_numpy(dtype=float)
 
-    ema_fast = ema(close_s, fast_period)
-    ema_slow = ema(close_s, slow_period)
+    def calc_ema_np(data: np.ndarray, period: int) -> np.ndarray:
+        """numpy 배열에 대한 EMA"""
+        if period < 1 or len(data) == 0:
+            return np.full_like(data, np.nan)
+        alpha = 2.0 / (period + 1.0)
+        ema_arr = np.zeros_like(data)
+        ema_arr[0] = data[0]
+        for i in range(1, len(data)):
+            ema_arr[i] = alpha * data[i] + (1 - alpha) * ema_arr[i - 1]
+        return ema_arr
+
+    ema_fast = calc_ema_np(arr, fast_period)
+    ema_slow = calc_ema_np(arr, slow_period)
     macd_line = ema_fast - ema_slow
-
-    macd_signal = ema(macd_line, signal_period)
-    macd_hist = macd_line - macd_signal
+    signal_line = calc_ema_np(macd_line, signal_period)
+    hist_line = macd_line - signal_line
 
     df_macd = pd.DataFrame({
         "macd_line": macd_line,
-        "macd_signal": macd_signal,
-        "macd_hist": macd_hist
+        "macd_signal": signal_line,
+        "macd_hist": hist_line
     }, index=close_s.index)
     return df_macd
 
@@ -58,92 +58,77 @@ def calc_dmi_adx(
     period: int = 14
 ) -> pd.DataFrame:
     """
-    DMI(+DI, -DI) & ADX 계산을 수행한다.
-    - +DI, -DI, 그리고 DX -> ADX
-    - 기본적으로 14일 구간이 많이 사용됨.
+    DMI(+DI, -DI) 및 ADX를 numpy 기반으로 계산한다.
 
     Args:
-        high_s (pd.Series): 고가 시리즈
-        low_s (pd.Series): 저가 시리즈
-        close_s (pd.Series): 종가 시리즈
-        period (int): DMI/ADX 계산 기간 (기본 14)
+        high_s (pd.Series): 고가
+        low_s (pd.Series): 저가
+        close_s (pd.Series): 종가
+        period (int): 계산 기간
 
     Returns:
-        pd.DataFrame:
-          - plus_di: +DI 시계열
-          - minus_di: -DI 시계열
-          - adx: ADX 시계열
+        pd.DataFrame: plus_di, minus_di, adx
     """
-    # 1) +DM, -DM 계산
-    prev_high = high_s.shift(1)
-    prev_low = low_s.shift(1)
-    up_move = high_s - prev_high
-    down_move = prev_low - low_s
+    h = high_s.to_numpy(dtype=float)
+    l = low_s.to_numpy(dtype=float)
+    c = close_s.to_numpy(dtype=float)
 
-    plus_dm = up_move.where((up_move > 0) & (up_move > down_move), 0.0)
-    minus_dm = down_move.where((down_move > 0) & (down_move > up_move), 0.0)
+    ph = np.roll(h, 1)
+    pl = np.roll(l, 1)
+    pc = np.roll(c, 1)
 
-    # 2) TR (True Range)
-    prev_close = close_s.shift(1)
-    tr1 = (high_s - low_s).abs()
-    tr2 = (high_s - prev_close).abs()
-    tr3 = (low_s - prev_close).abs()
-    true_range = tr1.combine(tr2, max).combine(tr3, max)
+    ph[0], pl[0], pc[0] = h[0], l[0], c[0]
 
-    # 3) +DM, -DM, TR 지표를 rolling sum (또는 평활)
-    plus_dm_sum = plus_dm.rolling(window=period).sum()
-    minus_dm_sum = minus_dm.rolling(window=period).sum()
-    tr_sum = true_range.rolling(window=period).sum()
+    up_move = h - ph
+    down_move = pl - l
 
-    plus_di = 100.0 * plus_dm_sum / tr_sum.replace(0, np.nan)
-    minus_di = 100.0 * minus_dm_sum / tr_sum.replace(0, np.nan)
+    plus_dm = np.where((up_move > 0) & (up_move > down_move), up_move, 0.0)
+    minus_dm = np.where((down_move > 0) & (down_move > up_move), down_move, 0.0)
 
-    # DX
-    dx = ( (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan) ) * 100.0
+    tr1 = np.abs(h - l)
+    tr2 = np.abs(h - pc)
+    tr3 = np.abs(l - pc)
+    true_range = np.maximum(tr1, np.maximum(tr2, tr3))
 
-    # ADX = DX의 rolling mean( period )
-    adx = dx.rolling(window=period).mean()
+    def rolling_sum_np(arr: np.ndarray, w: int) -> np.ndarray:
+        """numpy 누적합으로 rolling sum"""
+        if w < 1 or len(arr) == 0:
+            return np.full_like(arr, np.nan)
+        csum = np.cumsum(arr)
+        out = np.full_like(arr, np.nan)
+        for i in range(w - 1, len(arr)):
+            if i - w < 0:
+                out[i] = csum[i]
+            else:
+                out[i] = csum[i] - csum[i - w]
+        return out
+
+    pdm_sum = rolling_sum_np(plus_dm, period)
+    mdm_sum = rolling_sum_np(minus_dm, period)
+    tr_sum = rolling_sum_np(true_range, period)
+
+    # 0 방지
+    tr_sum = np.where(tr_sum == 0, np.nan, tr_sum)
+    plus_di = 100.0 * (pdm_sum / tr_sum)
+    minus_di = 100.0 * (mdm_sum / tr_sum)
+
+    diff_di = np.abs(plus_di - minus_di)
+    sum_di = plus_di + minus_di
+    sum_di[sum_di == 0] = np.nan
+    dx = 100.0 * (diff_di / sum_di)
+
+    adx_arr = np.full_like(dx, np.nan)
+    # 처음 period 이후부터 DX의 평균
+    if len(dx) >= period:
+        # 초기값: period 구간 평균
+        adx_arr[period-1] = np.nanmean(dx[:period])
+        # 이후 EMA 유사방식(또는 단순평균 갱신)
+        for i in range(period, len(dx)):
+            adx_arr[i] = ((adx_arr[i-1] * (period - 1)) + dx[i]) / period
 
     df_dmi = pd.DataFrame({
         "plus_di": plus_di,
         "minus_di": minus_di,
-        "adx": adx
+        "adx": adx_arr
     }, index=high_s.index)
     return df_dmi
-
-
-def calc_stochastic(
-    high_s: pd.Series,
-    low_s: pd.Series,
-    close_s: pd.Series,
-    k_period: int = 14,
-    d_period: int = 3
-) -> pd.DataFrame:
-    """
-    스토캐스틱 오실레이터(Stochastic Oscillator) 계산.
-    - %K = (현재 종가 - n일 최저) / (n일 최고 - n일 최저) * 100
-    - %D = %K의 d_period 이동평균
-
-    Args:
-        high_s (pd.Series): 고가 시리즈
-        low_s (pd.Series): 저가 시리즈
-        close_s (pd.Series): 종가 시리즈
-        k_period (int): K선 계산용 lookback (기본 14)
-        d_period (int): D선 계산용 SMA 기간 (기본 3)
-
-    Returns:
-        pd.DataFrame:
-          - stoch_k: %K
-          - stoch_d: %D
-    """
-    min_low = low_s.rolling(window=k_period).min()
-    max_high = high_s.rolling(window=k_period).max()
-
-    stoch_k = ((close_s - min_low) / (max_high - min_low).replace(0, np.nan)) * 100
-    stoch_d = stoch_k.rolling(window=d_period).mean()
-
-    df_stoch = pd.DataFrame({
-        "stoch_k": stoch_k,
-        "stoch_d": stoch_d
-    }, index=close_s.index)
-    return df_stoch
