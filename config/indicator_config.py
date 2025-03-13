@@ -1,126 +1,96 @@
 # gptbitcoin/config/indicator_config.py
-# 기술적 지표 파라미터 설정 (band_filters, time_delays, holding_periods는 각 2~3개 정도)
-# 주로 테스트할 시간 프레임: 1d, 4h, 1h, 15m
-# 트레이더들이 실제로 많이 사용하는 설정값 위주 설정
-# float('inf') meaning that the position will be held until a different trading signal is given.
-# --------------------------------------------------------------------------------------
-# 주의: 아래와 같이 퍼센트(%) 값을 0~1 사이의 실수(소수) 형태로 표현하는 필드들이 있습니다.
-#       예) 0.05 → 5%, 0.03 → 3% 로 해석해야 하며, 0 == 0% 를 의미합니다.
-#
-# 예시 필드들:
-#   - band_filters : [0, 0.05] → 0(0%), 0.05(5%)
-#   - c_percent_channels : [0, 0.03] → 0(0%), 0.03(3%)
-#   - uniform_filters : [0.05, 0.1, 0.5] → 각각 5%, 10%, 50%
-#
-# 실수(소수)로 적혀 있는 퍼센트 값들을 활용할 때는
-#   - "0.05라면 5%," "0.03이라면 3%" 로 해석한다는 점에 유의하세요.
-# --------------------------------------------------------------------------------------
+# 보조지표 파라미터 및 매매시그널 정의 (매수: +1, 중립: 0, 매도: -1)
+# 이 설정은 전반적으로 "추세추종" 방식을 가정한다.
 
-INDICATOR_COMBO_SIZES = [1]
+INDICATOR_COMBO_SIZES = [1, 2]
+
 INDICATOR_CONFIG = {
     "MA": {
-        "short_ma_periods": [5, 9, 20, 30],
-        "long_ma_periods": [50, 100, 200],
-        "band_filters": [0, 0.05],
-        "time_delays": [0, 2],
-        "holding_periods": [float('inf')]
+        "short_ma_periods": [5, 10, 20, 30, 50, 60],
+        "long_ma_periods": [100, 150, 200, 250, 300],
+        # 매매시그널(추세추종): short_ma > long_ma → +1, short_ma < long_ma → -1, 그 외 → 0
     },
 
     "RSI": {
-        "lookback_periods": [7, 14, 21],
-        "thresholds": [20, 30],
-        "time_delays": [0, 2],
-        "holding_periods": [float('inf')]
+        "lookback_periods": [7, 14, 21, 28],
+        "thresholds": [[30, 70], [20, 80], [25, 75], [40, 60]],
+        # 매매시그널(추세추종): RSI > upper_threshold → +1, RSI < lower_threshold → -1, 그 외 → 0
     },
 
     "OBV": {
-        "short_ma_periods": [5, 10, 20],
-        "long_ma_periods": [30, 50],
-        "band_filters": [0, 0.03, 0.05],
-        "time_delays": [0, 2],
-        "holding_periods": [float('inf')]
+        "absolute_threshold_periods": [14, 20],
+        "absolute_threshold_percentiles": [80, 90],
+        # 매매시그널(추세추종): OBV가 높은 percentile(상위 임계값) 초과 → +1,
+        #                     낮은 percentile(하위 임계값) 미만 → -1, 그 외 → 0
     },
 
     "MACD": {
-        "fast_periods": [6, 9, 12],
-        "slow_periods": [26],
-        "signal_periods": [9],
-        "band_filters": [0],
-        "time_delays": [0],
-        "holding_periods": [float('inf')]
+        "fast_periods": [6, 9, 12, 15],
+        "slow_periods": [26, 30],
+        "signal_periods": [9, 12],
+        # 매매시그널(추세추종): MACD 라인 > 시그널 라인 → +1, MACD 라인 < 시그널 라인 → -1, 그 외 → 0
     },
 
     "DMI_ADX": {
-        "dmi_periods": [14, 20, 30],
-        "adx_thresholds": [20, 25],
-        "band_filters": [0],
-        "time_delays": [0, 3],
-        "holding_periods": [float('inf')]
+        "lookback_periods": [7, 14, 20, 28],
+        "adx_thresholds": [20, 25, 30, 35, 40],
+        # 매매시그널(추세추종): ADX > threshold일 때 +DI > -DI → +1, +DI < -DI → -1, 그 외 → 0
     },
 
     "BOLL": {
-        "lookback_periods": [20],
+        "lookback_periods": [14, 20, 30, 50],
         "stddev_multipliers": [2, 2.5, 3],
-        "band_filters": [0],
-        "time_delays": [0, 2],
-        "holding_periods": [float('inf')]
+        # 매매시그널(추세추종): 가격 > upper_band → +1, 가격 < lower_band → -1, 그 외 → 0
     },
 
     "ICHIMOKU": {
-        "tenkan_period": [9],
-        "kijun_period": [26],
-        "senkou_span_b_period": [52],
-        "band_filters": [0],
-        "time_delays": [0],
-        "holding_periods": [float('inf')]
+        "tenkan_period": [7, 9, 12],
+        "kijun_period": [22, 26, 30],
+        "senkou_span_b_period": [52, 60],
+        # 매매시그널(추세추종): 전환선 > 기준선 & (가격 > 구름대) → +1,
+        #                     반대 조건(전환선 < 기준선 & 가격 < 구름대) → -1, 그 외 → 0
     },
 
     "PSAR": {
-        "acceleration_step": [0.01, 0.02],
-        "acceleration_max": [0.2],
-        "band_filters": [0, 0.03],
-        "time_delays": [0, 2],
-        "holding_periods": [float('inf')]
+        "acceleration_step": [0.01, 0.02, 0.03],
+        "acceleration_max": [0.2, 0.3],
+        # 매매시그널(추세추종): 가격이 PSAR 위 → +1, 가격이 PSAR 아래 → -1
     },
 
     "SUPERTREND": {
-        "atr_period": [10],
+        "atr_period": [10, 14, 20],
         "multiplier": [2, 3, 4],
-        "band_filters": [0, 0.03],
-        "time_delays": [0, 2],
-        "holding_periods": [float('inf')]
+        # 매매시그널(추세추종): 가격이 Supertrend 위 → +1, 아래 → -1
     },
 
-    "FIBO": {
-        "levels": [
-            [0.382, 0.618],
-            [0.236, 0.382, 0.5, 0.618],
-            [0.382, 0.618, 1.272]
-        ],
-        "band_filters": [0, 0.03],
-        "time_delays": [0, 2],
-        "holding_periods": [float('inf')]
+    "DONCHIAN_CHANNEL": {
+        "lookback_periods": [20, 30, 55, 100],
+        # 매매시그널(추세추종): 가격 > upper_channel → +1, 가격 < lower_channel → -1, 그 외 → 0
     },
 
-    "SR": {
-        "lookback_periods": [10, 20, 60, 120],
-        "band_filters": [0, 0.03],
-        "time_delays": [0, 2],
-        "holding_periods": [float('inf')]
+    "STOCH": {
+        "k_period": [14, 21],
+        "d_period": [3, 5],
+        "thresholds": [[20, 80], [25, 75], [30, 70]],
+        # 매매시그널(추세추종): K & D > upper_threshold → +1, K & D < lower_threshold → -1, 그 외 → 0
     },
 
-    "CB": {
-        "lookback_periods": [15, 20, 55, 200],
-        "c_percent_channels": [0, 0.03],
-        "band_filters": [0],
-        "time_delays": [0, 2],
-        "holding_periods": [float('inf')]
+    "STOCH_RSI": {
+        "lookback_periods": [14, 21],
+        "k_period": [3, 5],
+        "d_period": [3, 5],
+        "thresholds": [[20, 80], [25, 75], [30, 70]],
+        # 매매시그널(추세추종): StochRSI > upper_threshold → +1, StochRSI < lower_threshold → -1, 그 외 → 0
     },
 
-    "Filter": {
-        "lookback_periods": [5, 10, 20],
-        "uniform_filters": [0.05, 0.1, 0.5],
-        "uniform_time_delays": [0, 2],
-        "holding_periods": [float('inf')]
-    }
+    "MFI": {
+        "lookback_periods": [14, 20, 28],
+        "thresholds": [[20, 80], [30, 70], [40, 60]],
+        # 매매시그널(추세추종): MFI > upper_threshold → +1, MFI < lower_threshold → -1, 그 외 → 0
+    },
+
+    "VWAP": {
+        # 매매시그널(추세추종): 가격 > VWAP → +1, 가격 < VWAP → -1
+    },
+
 }

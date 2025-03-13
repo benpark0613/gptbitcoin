@@ -1,87 +1,84 @@
 # gptbitcoin/strategies/signal_factory.py
-# 주석은 한글로 작성 (필요 최소한만), 구글 스타일 Docstring
-# 퍼센트(%) 값을 0.05라면 5%로 해석한다는 점을 전제로,
-# band_filter, buy_filter, c_channel 등의 파라미터를 그대로 사용한다.
-# (예: band_filter=0.05 → 5%, band_filter=0.0 → 0%)
-# fibo_signal_trend에서 mode 파라미터는 사용하지 않는다(삭제).
+# 구글 스타일 Docstring, 주석은 최소한의 한글
+# indicator_config.py에서 정의한 지표 타입만 처리한다 (MA, RSI, OBV, MACD, DMI_ADX, BOLL,
+# ICHIMOKU, PSAR, SUPERTREND, DONCHIAN_CHANNEL, STOCH, STOCH_RSI, MFI, VWAP)
 
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Any
 
-# signal_logic.py의 함수를 import
+# 수정된 signal_logic.py에서 필요한 함수 임포트
 from .signal_logic import (
     ma_crossover_signal,
     rsi_signal,
     obv_signal,
-    filter_rule_signal,
-    support_resistance_signal,
-    channel_breakout_signal,
     macd_signal,
     dmi_adx_signal_trend,
     bollinger_signal,
     ichimoku_signal_trend,
     psar_signal,
     supertrend_signal,
-    fibo_signal_trend
+    donchian_signal,
+    stoch_signal,
+    stoch_rsi_signal,
+    mfi_signal,
+    vwap_signal
 )
 
 
 def create_signals_for_combo(
     df: pd.DataFrame,
     combo_params: List[Dict[str, Any]],
-    out_col: str = "signal_final"
+    out_col: str
 ) -> pd.DataFrame:
     """
-    여러 지표 파라미터(combo_params)에 기반하여, 각 시점별 매수/매도/관망 시그널(+1/-1/0)을 생성한다.
-    각 콤보별로 부분 시그널을 만든 뒤 합산하여 최종 시그널을 도출한다.
+    여러 지표 파라미터(combo_params)에 기반해 각 시점별 매수/매도/관망 시그널(+1/-1/0)을 생성한다.
+    모든 부분 시그널을 합산해 최종 시그널을 만든 후 df[out_col]에 저장.
 
     Args:
-        df (pd.DataFrame): 'open_time' 및 필요한 지표 칼럼이 들어있는 DF
-        combo_params (List[Dict[str, Any]]): 지표별 파라미터 딕셔너리들의 리스트
-        out_col (str): 최종 시그널을 기록할 칼럼명
+        df (pd.DataFrame): 필요한 지표 칼럼이 있는 데이터프레임
+        combo_params (List[Dict[str, Any]]): 지표 파라미터(dict)들의 리스트
+        out_col (str): 최종 시그널을 저장할 컬럼명
 
     Returns:
-        pd.DataFrame: df에 out_col 칼럼을 추가(또는 갱신)하여 반환
-                      각 행은 +1(매수), -1(매도), 0(관망) 시그널
+        pd.DataFrame: 최종 시그널 컬럼 out_col이 추가된 DataFrame
     """
     n = len(df)
     if n == 0:
         df[out_col] = []
         return df
 
-    # 부분 시그널(+1/-1/0)들을 모아둘 배열 리스트
     partial_signals_list = []
 
-    # 콤보에 포함된 각 지표 파라미터에 대해 시그널 생성
     for param in combo_params:
-        signals_arr = np.zeros(n, dtype=int)  # 기본 0 시그널
-        ttype = str(param.get("type", "")).upper()
+        ttype = str(param["type"]).upper()
+        signals_arr = np.zeros(n, dtype=int)
 
-        # 임시 시그널 컬럼명
+        # 임시 시그널 컬럼 (함수 내에서 사용)
         temp_signal_col = f"_{ttype}_temp_sig"
 
-        # 지표 타입별로 signal_logic 함수 호출
         if ttype == "MA":
-            sp = param["short_period"]
-            lp = param["long_period"]
-            bf = param.get("band_filter", 0.0)
-            short_col = f"ma_{sp}"
-            long_col = f"ma_{lp}"
+            # 이동평균 교차 시그널
+            short_p = param["short_period"]
+            long_p = param["long_period"]
+            short_col = f"MA_short_{short_p}"
+            long_col = f"MA_long_{long_p}"
+
             df = ma_crossover_signal(
                 df=df,
                 short_ma_col=short_col,
                 long_ma_col=long_col,
-                band_filter=bf,
                 signal_col=temp_signal_col
             )
             signals_arr = df[temp_signal_col].values
 
         elif ttype == "RSI":
+            # RSI 시그널
             lb = param["lookback"]
-            overbought = param.get("overbought", 70.0)
-            oversold = param.get("oversold", 30.0)
-            rsi_col = f"rsi_{lb}"
+            overbought = param["overbought"]
+            oversold = param["oversold"]
+            rsi_col = f"RSI_{lb}"
+
             df = rsi_signal(
                 df=df,
                 rsi_col=rsi_col,
@@ -92,8 +89,10 @@ def create_signals_for_combo(
             signals_arr = df[temp_signal_col].values
 
         elif ttype == "OBV":
-            obv_col = param.get("obv_col", "obv_raw")
-            threshold = param.get("band_filter", 0.0)
+            # OBV 시그널
+            # 예: OBV 절대 임계값( threshold ) 활용
+            obv_col = "OBV"
+            threshold = param["threshold_percentile_value"]  # 가정: 백분위 등으로 계산된 임계값
             df = obv_signal(
                 df=df,
                 obv_col=obv_col,
@@ -102,73 +101,30 @@ def create_signals_for_combo(
             )
             signals_arr = df[temp_signal_col].values
 
-        elif ttype == "FILTER":
-            w = param["lookback"]
-            x_pct = param["buy_filter"]
-            y_pct = param["sell_filter"]
-            close_col = param.get("close_col", "close")
-            df = filter_rule_signal(
-                df=df,
-                close_col=close_col,
-                window=w,
-                x_pct=x_pct,
-                y_pct=y_pct,
-                signal_col=temp_signal_col
-            )
-            signals_arr = df[temp_signal_col].values
-
-        elif ttype == "SR":
-            lb = param["lookback"]
-            band_pct = param.get("band_filter", 0.0)
-            min_col = f"sr_min_{lb}"
-            max_col = f"sr_max_{lb}"
-            price_col = param.get("price_col", "close")
-            df = support_resistance_signal(
-                df=df,
-                rolling_min_col=min_col,
-                rolling_max_col=max_col,
-                price_col=price_col,
-                band_pct=band_pct,
-                signal_col=temp_signal_col
-            )
-            signals_arr = df[temp_signal_col].values
-
-        elif ttype == "CB":
-            lb = param["lookback"]
-            breakout_pct = param["c_channel"]
-            min_col = f"ch_min_{lb}"
-            max_col = f"ch_max_{lb}"
-            price_col = param.get("price_col", "close")
-            df = channel_breakout_signal(
-                df=df,
-                rolling_min_col=min_col,
-                rolling_max_col=max_col,
-                price_col=price_col,
-                breakout_pct=breakout_pct,
-                signal_col=temp_signal_col
-            )
-            signals_arr = df[temp_signal_col].values
-
         elif ttype == "MACD":
+            # MACD 시그널
             f_per = param["fast_period"]
             s_per = param["slow_period"]
             sig_per = param["signal_period"]
-            macd_line_col = f"macd_line_{f_per}_{s_per}_{sig_per}"
-            macd_sig_col = f"macd_signal_{f_per}_{s_per}_{sig_per}"
+            macd_line_col = f"MACD_{f_per}_{s_per}_{sig_per}"
+            macd_signal_col = f"MACDs_{f_per}_{s_per}_{sig_per}"
+
             df = macd_signal(
                 df=df,
                 macd_line_col=macd_line_col,
-                macd_signal_col=macd_sig_col,
+                macd_signal_col=macd_signal_col,
                 signal_col=temp_signal_col
             )
             signals_arr = df[temp_signal_col].values
 
         elif ttype == "DMI_ADX":
-            dmi_period = param["dmi_period"]
-            adx_th = param.get("adx_threshold", 25.0)
-            plus_col = f"plus_di_{dmi_period}"
-            minus_col = f"minus_di_{dmi_period}"
-            adx_col = f"adx_{dmi_period}"
+            # DMI_ADX 시그널
+            dmi_period = param["lookback"]
+            adx_th = param["adx_threshold"]
+            plus_col = f"DMP_{dmi_period}"
+            minus_col = f"DMN_{dmi_period}"
+            adx_col = f"ADX_{dmi_period}"
+
             df = dmi_adx_signal_trend(
                 df=df,
                 plus_di_col=plus_col,
@@ -180,61 +136,73 @@ def create_signals_for_combo(
             signals_arr = df[temp_signal_col].values
 
         elif ttype == "BOLL":
+            # 볼린저 밴드 시그널
             lb = param["lookback"]
             sd = param["stddev_mult"]
-            mid_col = f"boll_mid_{lb}_{sd}"
-            up_col = f"boll_upper_{lb}_{sd}"
-            lo_col = f"boll_lower_{lb}_{sd}"
-            price_c = param.get("price_col", "close")
+            price_c = param["price_col"]
+
+            lower_col = f"BOLL_L_{lb}_{sd}"
+            mid_col = f"BOLL_M_{lb}_{sd}"
+            upper_col = f"BOLL_U_{lb}_{sd}"
+
             df = bollinger_signal(
                 df=df,
                 mid_col=mid_col,
-                upper_col=up_col,
-                lower_col=lo_col,
+                upper_col=upper_col,
+                lower_col=lower_col,
                 price_col=price_c,
                 signal_col=temp_signal_col
             )
             signals_arr = df[temp_signal_col].values
 
         elif ttype == "ICHIMOKU":
-            t = param["tenkan_period"]
-            k = param["kijun_period"]
-            s = param["senkou_span_b_period"]
-            prefix = f"ich_{t}_{k}_{s}"
-            ten_col = f"{prefix}_tenkan"
-            kij_col = f"{prefix}_kijun"
-            spa_col = f"{prefix}_span_a"
-            spb_col = f"{prefix}_span_b"
-            price_col = param.get("price_col", "close")
+            # 일목균형표 시그널
+            tenkan = param["tenkan_period"]
+            kijun = param["kijun_period"]
+            span_b = param["senkou_span_b_period"]
+            price_c = param["price_col"]
+
+            # aggregator에서 만든 칼럼명 예시
+            its_col = f"ITS_{tenkan}_{kijun}_{span_b}"
+            iks_col = f"IKS_{tenkan}_{kijun}_{span_b}"
+            isa_col = f"ISA_{tenkan}_{kijun}_{span_b}"
+            isb_col = f"ISB_{tenkan}_{kijun}_{span_b}"
+
             df = ichimoku_signal_trend(
                 df=df,
-                tenkan_col=ten_col,
-                kijun_col=kij_col,
-                span_a_col=spa_col,
-                span_b_col=spb_col,
-                price_col=price_col,
+                tenkan_col=its_col,
+                kijun_col=iks_col,
+                span_a_col=isa_col,
+                span_b_col=isb_col,
+                price_col=price_c,
                 signal_col=temp_signal_col
             )
             signals_arr = df[temp_signal_col].values
 
         elif ttype == "PSAR":
-            stp = param["acc_step"]
-            mx = param["acc_max"]
-            psar_col = f"psar_{stp}_{mx}"
-            price_col = param.get("price_col", "close")
+            # PSAR 시그널
+            stp = param["acceleration_step"]
+            mx = param["acceleration_max"]
+            price_c = param["price_col"]
+
+            psar_col = f"PSAR_{stp}_{mx}"
+
             df = psar_signal(
                 df=df,
                 psar_col=psar_col,
-                price_col=price_col,
+                price_col=price_c,
                 signal_col=temp_signal_col
             )
             signals_arr = df[temp_signal_col].values
 
         elif ttype == "SUPERTREND":
+            # 슈퍼트렌드
             ap = param["atr_period"]
             mt = param["multiplier"]
-            st_col = f"supertrend_{ap}_{mt}"
-            price_c = param.get("price_col", "close")
+            price_c = param["price_col"]
+
+            st_col = f"SUPERT_{ap}_{mt}"
+
             df = supertrend_signal(
                 df=df,
                 st_col=st_col,
@@ -243,29 +211,105 @@ def create_signals_for_combo(
             )
             signals_arr = df[temp_signal_col].values
 
-        elif ttype == "FIBO":
-            fibo_cols = param.get("fibo_cols", [])
-            price_col = param.get("price_col", "close")
-            df = fibo_signal_trend(
+        elif ttype == "DONCHIAN_CHANNEL":
+            # 돈채널 시그널
+            lb = param["lookback"]
+            price_c = param["price_col"]
+
+            lower_col = f"DCL_{lb}"
+            upper_col = f"DCU_{lb}"
+
+            df = donchian_signal(
                 df=df,
-                fibo_cols=fibo_cols,
-                price_col=price_col,
+                lower_col=lower_col,
+                upper_col=upper_col,
+                price_col=price_c,
                 signal_col=temp_signal_col
             )
             signals_arr = df[temp_signal_col].values
 
-        # 시그널 배열 모음에 추가
+        elif ttype == "STOCH":
+            # 스토캐스틱 시그널
+            k_per = param["k_period"]
+            d_per = param["d_period"]
+            thr_low = param["oversold"]
+            thr_high = param["overbought"]
+
+            k_col = f"STOCHk_{k_per}_{d_per}"
+            d_col = f"STOCHd_{k_per}_{d_per}"
+
+            df = stoch_signal(
+                df=df,
+                stoch_k_col=k_col,
+                stoch_d_col=d_col,
+                lower_threshold=thr_low,
+                upper_threshold=thr_high,
+                signal_col=temp_signal_col
+            )
+            signals_arr = df[temp_signal_col].values
+
+        elif ttype == "STOCH_RSI":
+            # 스토캐스틱 RSI 시그널
+            lb = param["lookback"]
+            k_ = param["k_period"]
+            d_ = param["d_period"]
+            thr_low = param["oversold"]
+            thr_high = param["overbought"]
+
+            k_col = f"STOCH_RSIk_{lb}_{k_}_{d_}"
+            d_col = f"STOCH_RSId_{lb}_{k_}_{d_}"
+
+            df = stoch_rsi_signal(
+                df=df,
+                k_col=k_col,
+                d_col=d_col,
+                lower_threshold=thr_low,
+                upper_threshold=thr_high,
+                signal_col=temp_signal_col
+            )
+            signals_arr = df[temp_signal_col].values
+
+        elif ttype == "MFI":
+            # MFI 시그널
+            lb = param["lookback"]
+            thr_low = param["oversold"]
+            thr_high = param["overbought"]
+            mfi_col = f"MFI_{lb}"
+
+            df = mfi_signal(
+                df=df,
+                mfi_col=mfi_col,
+                lower_threshold=thr_low,
+                upper_threshold=thr_high,
+                signal_col=temp_signal_col
+            )
+            signals_arr = df[temp_signal_col].values
+
+        elif ttype == "VWAP":
+            # VWAP 시그널
+            price_c = param["price_col"]
+            vwap_c = "VWAP"
+
+            df = vwap_signal(
+                df=df,
+                vwap_col=vwap_c,
+                price_col=price_c,
+                signal_col=temp_signal_col
+            )
+            signals_arr = df[temp_signal_col].values
+
+        # 임시 시그널 컬럼 제거 후 리스트에 추가
         partial_signals_list.append(signals_arr)
+        if temp_signal_col in df.columns:
+            df.drop(columns=[temp_signal_col], inplace=True)
 
-        # 임시 시그널 컬럼 제거
-        df.drop(columns=[temp_signal_col], inplace=True)
-
-    # 여러 부분 시그널을 합산해 최종 시그널 산출
+    # 부분 시그널 합산
     sum_signals = np.zeros(n, dtype=int)
     for arr in partial_signals_list:
         sum_signals += arr
 
-    # 합산 결과가 양수면 +1, 음수면 -1, 아니면 0
+    # 최종 시그널: 합이 양수면 +1, 음수면 -1, 그 외 0
     final_signals = np.where(sum_signals > 0, 1, np.where(sum_signals < 0, -1, 0))
     df[out_col] = final_signals
+
     return df

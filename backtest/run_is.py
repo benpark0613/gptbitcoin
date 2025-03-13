@@ -1,9 +1,6 @@
 # gptbitcoin/backtest/run_is.py
-# 구글 스타일 docstring, 최소한의 한글 주석을 사용한 In-Sample (IS) 백테스트 모듈.
-# - IS 구간에서 여러 지표 조합(콤보)을 테스트하여, Buy & Hold와 비교
-# - combos 내 각 파라미터가 buy_time_delay, sell_time_delay, holding_period를 포함할 수 있으면
-#   run_backtest 호출 시 자동으로 넘겨준다.
-# - 각 콤보별 성과 지표 + is_passed 여부를 반환한다.
+# 구글 스타일 Docstring, 최소한의 한글 주석
+# In-Sample(IS) 백테스트 모듈 (time_delay, holding_period 제거)
 
 import json
 from typing import List, Dict, Any
@@ -26,11 +23,11 @@ def run_is(
 ) -> List[Dict[str, Any]]:
     """
     In-Sample (IS) 백테스트를 수행한다.
-
     1) Buy & Hold 전략(항상 매수)의 수익률을 산출한다.
     2) combos에 있는 각 지표 파라미터 조합을 병렬로 백테스트한다.
     3) 각 콤보의 Return을 Buy & Hold Return과 비교해 is_passed 여부를 결정한다.
     4) 각 콤보의 결과(성과 지표)를 dict 형태로 리스트에 담아 반환한다.
+       (time_delay, holding_period 제거됨)
 
     Args:
         df_is (pd.DataFrame): IS 구간 시계열 데이터 (OHLCV + 지표)
@@ -40,7 +37,6 @@ def run_is(
 
     Returns:
         List[Dict[str, Any]]: 각 콤보의 백테스트 결과 리스트.
-            각 원소는 다음 필드를 포함한다:
             - "timeframe"
             - "is_start_cap"
             - "is_end_cap"
@@ -61,7 +57,7 @@ def run_is(
     is_end_kst = ms_to_kst_str(is_end_ms)
     print(f"[INFO] IS({timeframe}) range: {is_start_kst} ~ {is_end_kst}, rows={len(df_is)}")
 
-    # 1) Buy & Hold (IS)
+    # 1) Buy & Hold (IS): 항상 매수 신호
     bh_signals = [1] * len(df_is)
     bh_result = run_backtest(
         df=df_is,
@@ -78,7 +74,7 @@ def run_is(
     )
     bh_return = bh_score["Return"]
 
-    # 첫 행: Buy & Hold
+    # 첫 행: Buy & Hold 결과
     bh_row = {
         "timeframe": f"{timeframe}(B/H)",
         "is_start_cap": bh_score["StartCapital"],
@@ -95,31 +91,18 @@ def run_is(
     def _process_combo(combo: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         콤보(여러 지표 dict)로 IS 백테스트 후 결과를 반환한다.
+        (time_delay, holding_period 파라미터는 무시)
         """
         # 콤보별 매매 시그널 생성
         df_local = create_signals_for_combo(df_is, combo, out_col="signal_final")
         signals = df_local["signal_final"].tolist()
 
-        # buy_time_delay, sell_time_delay, holding_period 추출
-        buy_td = -1
-        sell_td = -1
-        hold_p = 0
-        for cdict in combo:
-            if "buy_time_delay" in cdict:
-                buy_td = cdict["buy_time_delay"]
-            if "sell_time_delay" in cdict:
-                sell_td = cdict["sell_time_delay"]
-            if "holding_period" in cdict:
-                hold_p = cdict["holding_period"]
-
+        # 백테스트 수행
         engine_out = run_backtest(
             df=df_local,
             signals=signals,
             start_capital=start_capital,
-            allow_short=ALLOW_SHORT,
-            buy_time_delay=buy_td,
-            sell_time_delay=sell_td,
-            holding_period=hold_p
+            allow_short=ALLOW_SHORT
         )
         score = calculate_metrics(
             equity_curve=engine_out["equity_curve"],
@@ -129,10 +112,9 @@ def run_is(
             timeframe=timeframe
         )
 
-        # B/H 대비 수익률 비교
+        # Buy & Hold 대비 수익률 비교
         pass_bool = (score["Return"] >= bh_return)
 
-        # 콤보 정보를 JSON 문자열로 변환
         combo_info = {
             "timeframe": timeframe,
             "combo_params": combo

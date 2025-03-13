@@ -1,11 +1,6 @@
-"""
-gptbitcoin/backtest/run_oos.py
-
-구글 스타일 docstring 사용, 최소한의 한글 주석.
-IS 통과 여부와 상관없이 전체 콤보에 대해 OOS(아웃샘플) 구간 백테스트를 수행하고,
-매매 내역과 로그(oos_trades_log), 그리고 현재 포지션(oos_current_position)을 함께 저장해 반환한다.
-현재 포지션은 LONG이면 1, SHORT이면 -1, 청산되었거나 없으면 0이다.
-"""
+# gptbitcoin/backtest/run_oos.py
+# 구글 스타일 docstring 사용, 최소한의 한글 주석.
+# OOS(아웃샘플) 구간 백테스트 모듈 (time_delay, holding_period 제거)
 
 import json
 from typing import List, Dict, Any
@@ -22,22 +17,20 @@ from utils.date_time import ms_to_kst_str
 
 def _record_trades_info(df: pd.DataFrame, trades: List[dict]) -> str:
     """
-    OOS 구간에서 발생한 매매 내역(trades)을 KST 시각으로 요약하여 단일 문자열로 반환한다.
-    전체 거래 내역 중 최신 10건만 기록한다.
+    OOS 구간에서 발생한 매매 내역(trades)을 KST 시각으로 요약하여 단일 문자열로 반환.
+    전체 거래 내역 중 최신 5건만 기록한다.
 
     Args:
         df (pd.DataFrame): OOS 구간 DataFrame (open_time 칼럼 포함)
         trades (List[dict]): 매매 내역 리스트
 
     Returns:
-        str: 최신 10건의 거래 기록을 포함한 문자열
+        str: 최신 5건의 거래 기록을 문자열로 표현
     """
     if not trades:
         return "No Trades"
 
-    # 최신 5건만 선택
     recent_trades = trades[-5:]
-
     logs = []
     for i, t in enumerate(recent_trades, start=1):
         e_idx = t.get("entry_index")
@@ -51,7 +44,7 @@ def _record_trades_info(df: pd.DataFrame, trades: List[dict]) -> str:
         else:
             entry_time_str = "N/A"
 
-        if isinstance(x_idx, int) and 0 <= x_idx < len(df):
+        if isinstance(x_idx, int) and x_idx < len(df):
             ms_val_exit = df.iloc[x_idx]["open_time"]
             exit_time_str = ms_to_kst_str(ms_val_exit)
         elif isinstance(x_idx, int) and x_idx >= len(df):
@@ -69,21 +62,21 @@ def _record_trades_info(df: pd.DataFrame, trades: List[dict]) -> str:
 def _detect_oos_current_position(trades: List[Dict[str, Any]], df: pd.DataFrame) -> int:
     """
     OOS 구간에서 마지막 포지션 상태를 판단한다.
-    마지막 거래의 exit_index가 DataFrame 길이보다 크거나 같으면 아직 청산되지 않은 포지션으로 간주한다.
-    반환값: LONG이면 1, SHORT이면 -1, 청산되었거나 없으면 0.
+    마지막 거래의 exit_index가 df 길이 이상이면 청산되지 않은 포지션으로 간주.
 
     Args:
         trades (List[Dict[str, Any]]): 매매 내역 리스트.
-        df (pd.DataFrame): OOS 구간 데이터프레임.
+        df (pd.DataFrame): OOS 구간 데이터프레임
 
     Returns:
         int: 현재 포지션 (1: long, -1: short, 0: flat)
     """
     if not trades:
         return 0
+
     last_trade = trades[-1]
     exit_idx = last_trade.get("exit_index", None)
-    if exit_idx is not None and exit_idx >= len(df):
+    if isinstance(exit_idx, int) and exit_idx >= len(df):
         ptype = last_trade.get("position_type", "").upper()
         if ptype == "LONG":
             return 1
@@ -93,16 +86,18 @@ def _detect_oos_current_position(trades: List[Dict[str, Any]], df: pd.DataFrame)
 
 
 def run_oos(
-        df_oos: pd.DataFrame,
-        combos: List[List[Dict[str, Any]]],
-        timeframe: str,
-        start_capital: float = START_CAPITAL
+    df_oos: pd.DataFrame,
+    combos: List[List[Dict[str, Any]]],
+    timeframe: str,
+    start_capital: float = START_CAPITAL
 ) -> List[Dict[str, Any]]:
     """
     OOS(아웃샘플) 백테스트:
-      1) Buy & Hold 전략(항상 매수)으로 전체 구간 백테스트 후 oos_* 결과 산출.
-      2) combos 내 모든 지표 파라미터 조합별로 백테스트를 병렬로 수행 (oos_trades_log 포함).
-      3) 각 콤보별 OOS 성과(딕셔너리)를 리스트로 반환하며, oos_current_position도 포함한다.
+      1) Buy & Hold 전략(항상 매수)으로 전체 구간 백테스트 후 결과 산출.
+      2) combos 내 모든 지표 파라미터 조합별로 백테스트를 병렬로 수행.
+      3) 각 콤보별 OOS 성과(딕셔너리)를 리스트로 반환하며,
+         매매 내역 로그(oos_trades_log)와 현재 포지션(oos_current_position)도 포함.
+      (time_delay, holding_period 제거됨)
 
     Args:
         df_oos (pd.DataFrame): OOS 구간 시계열 데이터 (OHLCV 및 지표)
@@ -122,7 +117,7 @@ def run_oos(
                 "oos_sharpe": ...,
                 "oos_mdd": ...,
                 "used_indicators": ...,
-                "oos_current_position": ...  # 1: long, -1: short, 0: flat
+                "oos_current_position": ...
             },
             ...
         ]
@@ -130,14 +125,14 @@ def run_oos(
     if df_oos.empty:
         return []
 
-    # OOS 구간 로그용 시각 (KST)
+    # 로그용 시각
     oos_start_ms = df_oos.iloc[0]["open_time"]
     oos_end_ms = df_oos.iloc[-1]["open_time"]
     oos_start_kst = ms_to_kst_str(oos_start_ms)
     oos_end_kst = ms_to_kst_str(oos_end_ms)
     print(f"[INFO] OOS({timeframe}) range: {oos_start_kst} ~ {oos_end_kst}, rows={len(df_oos)}")
 
-    # 1) Buy & Hold (항상 매수) 백테스트
+    # 1) Buy & Hold
     bh_signals = [1] * len(df_oos)
     bh_result = run_backtest(
         df=df_oos,
@@ -154,6 +149,7 @@ def run_oos(
     )
     bh_trades_log = _record_trades_info(df_oos, bh_result["trades"])
     bh_current_position = _detect_oos_current_position(bh_result["trades"], df_oos)
+
     bh_row = {
         "timeframe": f"{timeframe}(B/H)",
         "oos_start_cap": bh_score["StartCapital"],
@@ -170,31 +166,17 @@ def run_oos(
     # 2) combos 병렬 백테스트
     def _process_combo_oos(combo: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        주어진 콤보(복수 지표)로 OOS 구간 백테스트 후 결과(성과 + 매매 로그)를 반환한다.
+        주어진 콤보(복수 지표)로 OOS 구간 백테스트 후 결과(성과 + 매매 로그) 반환.
+        (time_delay, holding_period 파라미터는 무시)
         """
         df_local = create_signals_for_combo(df_oos, combo, out_col="signal_oos_final")
         signals = df_local["signal_oos_final"].tolist()
-
-        # combo 내 buy_time_delay, sell_time_delay, holding_period 추출
-        buy_td = -1
-        sell_td = -1
-        hold_p = 0
-        for cdict in combo:
-            if "buy_time_delay" in cdict:
-                buy_td = cdict["buy_time_delay"]
-            if "sell_time_delay" in cdict:
-                sell_td = cdict["sell_time_delay"]
-            if "holding_period" in cdict:
-                hold_p = cdict["holding_period"]
 
         engine_out = run_backtest(
             df=df_local,
             signals=signals,
             start_capital=start_capital,
-            allow_short=ALLOW_SHORT,
-            buy_time_delay=buy_td,
-            sell_time_delay=sell_td,
-            holding_period=hold_p
+            allow_short=ALLOW_SHORT
         )
         score = calculate_metrics(
             equity_curve=engine_out["equity_curve"],
@@ -226,5 +208,4 @@ def run_oos(
         delayed(_process_combo_oos)(combo) for combo in combos
     )
     results.extend(parallel_out)
-
     return results
