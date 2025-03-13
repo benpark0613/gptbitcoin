@@ -1,118 +1,120 @@
 # gptbitcoin/utils/indicator_utils.py
-# 보조지표를 계산하기 위해 필요한 최대 윈도우(봉 개수)를 구한다.
-# 각 지표별 파라미터(기간 등)를 참고하여, 가장 긴 윈도우를 추출한다.
+# 보조지표 계산 시 필요한 최대 윈도우(봉 개수)를 계산한다. (구글 스타일 Docstring, 최소한의 한글 주석)
 
 from typing import Dict, Any, List
 
-from config.indicator_config import INDICATOR_CONFIG
-
-
 def get_required_warmup_bars(cfg: Dict[str, Any]) -> int:
     """
-    보조지표 계산 시 필요한 최대 윈도우(봉 개수)를 찾는다.
-    cfg 인자로 MA, RSI, OBV, Filter, SR, CB, MACD, DMI_ADX, BOLL, ICHIMOKU,
-    PSAR, SUPERTREND, FIBO 등에 대한 파라미터를 전달받는다.
+    주어진 지표 설정(cfg)에 따라 필요한 최대 워밍업(봉 개수)을 계산한다.
+    지표별로 사용되는 기간(lookback 등) 중 가장 큰 값을 찾아 반환한다.
+
+    Args:
+        cfg (Dict[str, Any]): indicator_config.py 등에서 불러온 지표 설정 정보
 
     Returns:
-        int: 필요한 최대 봉 개수 (가장 긴 지표 윈도우)
+        int: 필요한 최대 봉(캔들) 개수
     """
     candidates: List[int] = []
 
-    # 1) MA: short_ma_periods + long_ma_periods 중 최댓값
+    # 1) MA
+    # short_ma_periods, long_ma_periods 중 최댓값
     if "MA" in cfg:
-        short_list = cfg["MA"].get("short_ma_periods", [])
-        long_list = cfg["MA"].get("long_ma_periods", [])
-        if short_list or long_list:
-            candidates.append(max(short_list + long_list))
+        shorts = cfg["MA"].get("short_ma_periods", [])
+        longs = cfg["MA"].get("long_ma_periods", [])
+        if shorts or longs:
+            candidates.append(max(shorts + longs))
 
-    # 2) RSI: lookback_periods 중 최댓값
+    # 2) RSI
     if "RSI" in cfg:
-        lookback_list = cfg["RSI"].get("lookback_periods", [])
-        if lookback_list:
-            candidates.append(max(lookback_list))
+        lb_list = cfg["RSI"].get("lookback_periods", [])
+        if lb_list:
+            candidates.append(max(lb_list))
 
-    # 3) OBV: short_ma_periods + long_ma_periods 중 최댓값
+    # 3) OBV
+    # 과거에는 'absolute_threshold_periods'가 있었다면,
+    # 이제 config.indicator_config.py에서 short_ma_periods, long_ma_periods를 사용하므로 아래와 같이 변경
     if "OBV" in cfg:
         sp_list = cfg["OBV"].get("short_ma_periods", [])
         lp_list = cfg["OBV"].get("long_ma_periods", [])
         if sp_list or lp_list:
             candidates.append(max(sp_list + lp_list))
 
-    # 4) Filter: lookback_periods 중 최댓값
-    if "Filter" in cfg:
-        lookback_list = cfg["Filter"].get("lookback_periods", [])
-        if lookback_list:
-            candidates.append(max(lookback_list))
-
-    # 5) SR: lookback_periods 중 최댓값
-    if "SR" in cfg:
-        lookback_list = cfg["SR"].get("lookback_periods", [])
-        if lookback_list:
-            candidates.append(max(lookback_list))
-
-    # 6) CB (Channel Breakout): lookback_periods 중 최댓값
-    if "CB" in cfg:
-        lookback_list = cfg["CB"].get("lookback_periods", [])
-        if lookback_list:
-            candidates.append(max(lookback_list))
-
-    # -------------------
-    # 여기서부터 새로 추가된 지표
-    # -------------------
-
-    # 7) MACD: slow_periods + signal_periods가 가장 큰 조합을 고려 (fast_period는 일반적으로 slow보다 작음)
-    #    여기서는 단순히 max(slow) + max(signal)로 대략 추정
+    # 4) MACD
+    # (slow_period, signal_period) 합이 실제 lookback에 영향
     if "MACD" in cfg:
-        slow_list = cfg["MACD"].get("slow_periods", [])
-        sig_list = cfg["MACD"].get("signal_periods", [])
-        if slow_list and sig_list:
-            max_slow = max(slow_list)
-            max_sig = max(sig_list)
-            # MACD 특성상 slow_period + signal_period 정도를 워밍업으로 추정
-            candidates.append(max_slow + max_sig)
+        slows = cfg["MACD"].get("slow_periods", [])
+        signals = cfg["MACD"].get("signal_periods", [])
+        if slows and signals:
+            # ex) slow=30, signal=12 => 대략 42개 봉
+            candidates.append(max(slows) + max(signals))
 
-    # 8) DMI_ADX: dmi_periods 중 최댓값
+    # 5) DMI_ADX
     if "DMI_ADX" in cfg:
-        dmi_list = cfg["DMI_ADX"].get("dmi_periods", [])
-        if dmi_list:
-            candidates.append(max(dmi_list))
+        lookbacks = cfg["DMI_ADX"].get("lookback_periods", [])
+        if lookbacks:
+            candidates.append(max(lookbacks))
 
-    # 9) BOLL: lookback_periods 중 최댓값
+    # 6) BOLL
     if "BOLL" in cfg:
-        lb_list = cfg["BOLL"].get("lookback_periods", [])
+        lb_boll = cfg["BOLL"].get("lookback_periods", [])
+        if lb_boll:
+            candidates.append(max(lb_boll))
+
+    # 7) ICHIMOKU
+    # 일목균형표는 (tenkan_period, kijun_period, senkou_span_b_period) 중 최댓값
+    if "ICHIMOKU" in cfg:
+        tenkans = cfg["ICHIMOKU"].get("tenkan_period", [])
+        kijuns = cfg["ICHIMOKU"].get("kijun_period", [])
+        spans = cfg["ICHIMOKU"].get("senkou_span_b_period", [])
+        t_max = max(tenkans) if tenkans else 0
+        k_max = max(kijuns) if kijuns else 0
+        s_max = max(spans) if spans else 0
+        candidates.append(max(t_max, k_max, s_max))
+
+    # 8) PSAR
+    # 별도 lookback 없음, 가속도(acceleration)와 max값은 기간이 아님
+
+    # 9) SUPERTREND
+    if "SUPERTREND" in cfg:
+        atrs = cfg["SUPERTREND"].get("atr_period", [])
+        if atrs:
+            candidates.append(max(atrs))
+
+    # 10) DONCHIAN_CHANNEL
+    if "DONCHIAN_CHANNEL" in cfg:
+        dc_list = cfg["DONCHIAN_CHANNEL"].get("lookback_periods", [])
+        if dc_list:
+            candidates.append(max(dc_list))
+
+    # 11) STOCH
+    if "STOCH" in cfg:
+        k_list = cfg["STOCH"].get("k_period", [])
+        d_list = cfg["STOCH"].get("d_period", [])
+        if k_list and d_list:
+            # 대략 max(k) + max(d) 봉
+            candidates.append(max(k_list) + max(d_list))
+
+    # 12) STOCH_RSI
+    if "STOCH_RSI" in cfg:
+        # config에는 "rsi_periods", "stoch_periods", "k_period", "d_period" 등 존재
+        srsi_cfg = cfg["STOCH_RSI"]
+        rsi_list = srsi_cfg.get("rsi_periods", [])
+        stoch_list = srsi_cfg.get("stoch_periods", [])
+        k_list = srsi_cfg.get("k_period", [])
+        d_list = srsi_cfg.get("d_period", [])
+
+        if rsi_list and stoch_list and k_list and d_list:
+            # 예: max(rsi_list)=21, max(stoch_list)=21, max(k_list)=5, max(d_list)=5 => 52개 정도 필요
+            candidates.append(max(rsi_list) + max(stoch_list) + max(k_list) + max(d_list))
+
+    # 13) MFI
+    if "MFI" in cfg:
+        lb_list = cfg["MFI"].get("lookback_periods", [])
         if lb_list:
             candidates.append(max(lb_list))
 
-    # 10) ICHIMOKU: tenkan_period, kijun_period, senkou_span_b_period 중 최댓값
-    if "ICHIMOKU" in cfg:
-        t_list = cfg["ICHIMOKU"].get("tenkan_period", [])
-        k_list = cfg["ICHIMOKU"].get("kijun_period", [])
-        s_list = cfg["ICHIMOKU"].get("senkou_span_b_period", [])
-        # 각 리스트가 비어 있을 수 있으므로 max 시 에러 방지
-        t_max = max(t_list) if t_list else 0
-        k_max = max(k_list) if k_list else 0
-        s_max = max(s_list) if s_list else 0
-        # 세 값 중 가장 큰 값
-        candidates.append(max(t_max, k_max, s_max))
-
-    # 11) PSAR: acceleration_step / acceleration_max는 윈도우 개념이 아님 → 0 처리
-    #    pandas_ta.psar도 내부 계산에 특정 길이가 필요할 수 있으나, config 파라미터로 window는 없으므로 0
-    if "PSAR" in cfg:
-        # 원한다면 일정 기본값(예:20)로 가정할 수도 있으나 여기서는 0
-        candidates.append(0)
-
-    # 12) SUPERTREND: atr_period 중 최댓값
-    if "SUPERTREND" in cfg:
-        atr_list = cfg["SUPERTREND"].get("atr_period", [])
-        if atr_list:
-            candidates.append(max(atr_list))
-
-    # 13) FIBO: rolling_window (기본 20).  여러 levels가 있어도 rolling_window는 하나만 쓰임
-    if "FIBO" in cfg:
-        fibo_cfg = cfg["FIBO"]
-        roll_win = fibo_cfg.get("rolling_window", 20)
-        # rolling_window라는 키가 없으면 20으로 가정
-        candidates.append(roll_win)
+    # 14) VWAP
+    # 별도 기간 파라미터 없음
 
     if not candidates:
         return 0
@@ -121,10 +123,10 @@ def get_required_warmup_bars(cfg: Dict[str, Any]) -> int:
 
 def main():
     """
-    테스트용 main 함수:
-    indicator_config.py의 INDICATOR_CONFIG를 불러와
-    필요한 워밍업 봉 수를 계산 후 출력한다.
+    테스트용 메인 함수. indicator_config.py의 설정을 직접 불러와
+    필요한 워밍업 봉 수를 출력하는 예시.
     """
+    from config.indicator_config import INDICATOR_CONFIG
     needed = get_required_warmup_bars(INDICATOR_CONFIG)
     print(f"[indicator_utils] 워밍업에 필요한 최대 봉 수: {needed}")
 

@@ -15,8 +15,8 @@ LOG_LEVEL = "INFO"  # 필요에 따라 "INFO", "WARNING" 등 변경 가능
 
 # .env 로드
 load_dotenv()
-BINANCE_API_KEY = os.getenv("BINANCE_ACCESS_KEY", "")
-BINANCE_SECRET_KEY = os.getenv("BINANCE_SECRET_KEY", "")
+BINANCE_API_KEY = os.getenv("BINANCE_ACCESS_KEY")
+BINANCE_SECRET_KEY = os.getenv("BINANCE_SECRET_KEY")
 
 # 거래소 및 레버리지 설정
 MARGIN_TYPE = "ISOLATED"  # 마진 유형 (예: ISOLATED)
@@ -31,7 +31,7 @@ START_CAPITAL = 100_000   # 백테스트 시작 자본
 # 심볼, 타임프레임 관련
 SYMBOL = "BTCUSDT"        # 기본 심볼
 TIMEFRAMES = ["1d", "4h", "1h", "15m"]  # 사용할 타임프레임 목록
-# TIMEFRAMES = ["1d"]       # 사용할 타임프레임 목록
+# TIMEFRAMES = ["1d"]       # 테스트용 삭제 금지
 
 # 바이낸스 비트코인 선물 오픈일 (API 요청 시 구간 참조, UTC 기준)
 EXCHANGE_OPEN_DATE = "2019-09-08 00:00:00"

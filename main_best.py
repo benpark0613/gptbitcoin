@@ -1,5 +1,6 @@
-# main_best.py
+# gptbitcoin/main_best.py
 # 메인 백테스트 실행 스크립트 (항상 최신(today()) 시점으로 종료 시점을 설정)
+# 수정 버전: 워밍업 및 DatetimeIndex 설정 로직 추가, param_generator_for_aggregation 사용
 
 import datetime
 import platform
@@ -8,6 +9,7 @@ import os
 import logging
 from typing import Optional, Dict, Any
 
+import pandas as pd
 import pytz
 import schedule
 
@@ -17,7 +19,6 @@ from utils.date_time import today
 # Windows 알림
 try:
     from win10toast import ToastNotifier
-
     _WINDOWS_TOAST_AVAILABLE = True
 except ImportError:
     _WINDOWS_TOAST_AVAILABLE = False
@@ -25,7 +26,6 @@ except ImportError:
 # MacOS 알림
 try:
     from pync import Notifier
-
     _MACOS_NOTIFIER_AVAILABLE = True
 except ImportError:
     _MACOS_NOTIFIER_AVAILABLE = False
@@ -54,8 +54,8 @@ from data.update_data import update_data_db
 # 전처리(NaN/이상치)
 from data.preprocess import clean_ohlcv
 
-# 지표 계산
-from indicators.aggregator import calc_all_indicators
+# 새 모듈: param_generator_for_aggregation
+from indicators.param_generator_for_aggregation import calc_all_indicators_for_aggregation
 
 # 지표 파라미터(워밍업 봉 계산)
 from utils.indicator_utils import get_required_warmup_bars
@@ -65,6 +65,7 @@ from utils.db_utils import prepare_ohlcv_with_warmup
 
 # 콤보 + B/H 백테스트 (단일 콤보)
 from backtest.run_best import run_best_single
+
 
 _previous_position: Optional[str] = None
 
@@ -95,15 +96,8 @@ logging.basicConfig(
 
 
 def _show_system_notification(title: str, msg: str, duration_sec: int = 10):
-    """Windows/MacOS 알림 혹은 콘솔 출력.
-
-    Args:
-        title (str): 알림 제목
-        msg (str): 알림 내용
-        duration_sec (int): 표시 지속 시간(초)
-    """
+    """Windows/MacOS 알림 혹은 콘솔 출력."""
     system_name = platform.system().lower()
-
     if system_name.startswith("win") and _WINDOWS_TOAST_AVAILABLE:
         toaster = ToastNotifier()
         toaster.show_toast(
@@ -119,12 +113,7 @@ def _show_system_notification(title: str, msg: str, duration_sec: int = 10):
 
 
 def _send_email_notification(subject: str, body: str) -> None:
-    """이메일 발송.
-
-    Args:
-        subject (str): 메일 제목
-        body (str): 메일 본문
-    """
+    """이메일 발송."""
     try:
         send_gmail(subject=subject, body=body)
     except Exception as e:
@@ -132,13 +121,7 @@ def _send_email_notification(subject: str, body: str) -> None:
 
 
 def notify_user(message: str, send_email: bool = False, email_subject: str = ""):
-    """로그 + (가능 시) 시스템 알림 + (옵션) 메일 발송.
-
-    Args:
-        message (str): 메시지
-        send_email (bool): 메일 즉시 발송 여부
-        email_subject (str): 메일 제목
-    """
+    """로그 + (가능 시) 시스템 알림 + (옵션) 메일 발송."""
     now_kst = datetime.datetime.now(tz=pytz.timezone("Asia/Seoul"))
     now_str = now_kst.strftime("%Y-%m-%d %H:%M:%S KST")
     full_msg = f"{now_str} - {message}"
@@ -152,26 +135,18 @@ def notify_user(message: str, send_email: bool = False, email_subject: str = "")
 
 
 def main_loop(
-        timeframe: str,
-        combo_info: Dict[str, Any],
-        start_date_str: str,
-        alert_on_same_position: bool
+    timeframe: str,
+    combo_info: Dict[str, Any],
+    start_date_str: str,
+    alert_on_same_position: bool
 ):
     """
     단일 콤보 백테스트 및 결과 처리.
-    end_date는 항상 최신(today()) 값으로 설정한다.
-
-    Args:
-        timeframe (str): 타임프레임 (예: '1h')
-        combo_info (Dict[str, Any]): 콤보 설정
-        start_date_str (str): 백테스트 시작 UTC (문자열)
-        alert_on_same_position (bool): 동일 포지션 시에도 메일 보내는지 여부
+    end_date는 항상 최신(today()) 시점으로 설정.
     """
     global _previous_position
 
-    # 매 실행 시점마다 today()로 최신 종료 시각을 설정
-    end_date_str = today()
-
+    end_date_str = today()  # 매 실행 시점마다 최신 today()
     now_kst = datetime.datetime.now(tz=pytz.timezone("Asia/Seoul"))
     now_kst_str = now_kst.strftime("%Y-%m-%d %H:%M:%S KST")
 
@@ -192,10 +167,10 @@ def main_loop(
         return
 
     try:
-        # 필요한 워밍업 봉 수 계산
+        # 1) 워밍업 바 설정
         warmup_bars = get_required_warmup_bars(INDICATOR_CONFIG)
 
-        # DB에서 데이터 로딩 및 전처리
+        # 2) DB에서 데이터 로딩 + 전처리
         df_merged = prepare_ohlcv_with_warmup(
             symbol=SYMBOL,
             timeframe=timeframe,
@@ -211,8 +186,15 @@ def main_loop(
             notify_user("[main_best] DF가 비어있음.")
             return
 
-        df_ind = calc_all_indicators(df_merged, INDICATOR_CONFIG)
+        # 3) DatetimeIndex 설정 (pandas-ta가 시계열로 인식하도록)
+        df_merged["datetime"] = pd.to_datetime(df_merged["open_time"], unit="ms")
+        df_merged.set_index("datetime", inplace=True)
+        df_merged.sort_index(inplace=True)
 
+        # 4) 모든 지표 한 번에 계산 (중복 칼럼 방지)
+        df_ind = calc_all_indicators_for_aggregation(df_merged, INDICATOR_CONFIG)
+
+        # 5) 메인 구간 필터링
         dt_format = "%Y-%m-%d %H:%M:%S"
         utc = pytz.utc
 
@@ -224,23 +206,27 @@ def main_loop(
         end_utc_dt = utc.localize(naive_end)
         end_ms = int(end_utc_dt.timestamp() * 1000)
 
+        # open_time이 ms 이므로 아래처럼 필터
         df_test = df_ind[
             (df_ind["open_time"] >= start_ms) & (df_ind["open_time"] <= end_ms)
-            ].copy()
+        ].copy()
+
+        # 백테스트 시점에서 추가 지표 계산이 없다면 reset_index(drop=True) 가능
+        # (만약 시그널 생성 시 pandas-ta를 쓴다면, DatetimeIndex를 유지해야 함)
         df_test.reset_index(drop=True, inplace=True)
 
         if df_test.empty:
             notify_user("[main_best] 백테스트 구간 DF가 비어있음.")
             return
 
-        # 콤보 + B/H 백테스트 실행
+        # 6) 콤보 + B/H 백테스트 실행
         result = run_best_single(df_test, combo_info)
         combo_score = result["combo_score"]
         combo_position = result["combo_position"]
         combo_trades_log = result["combo_trades_log"]
         bh_score = result["bh_score"]
 
-        # 거래로그 - 최신 5개만 출력
+        # 거래로그 - 최신 5개만
         trades_lines = combo_trades_log.split("\n")
         if len(trades_lines) > 5:
             trades_lines = trades_lines[-5:]
@@ -256,7 +242,6 @@ def main_loop(
             f"Sharpe={combo_score['Sharpe']:.4f}, "
             f"Pos={combo_position}"
         )
-
         logging.info(
             f"[main_best] (Buy&Hold) StartC={bh_score['StartCapital']:.2f}, "
             f"EndC={bh_score['EndCapital']:.2f}, "
@@ -264,21 +249,20 @@ def main_loop(
             f"Sharpe={bh_score['Sharpe']:.4f}"
         )
 
-        # 메일 보낼 내용
         mail_subject = ""
         mail_body = (
-                f"백테스트 결과:\n"
-                f"- 콤보 StartC={combo_score['StartCapital']:.2f}, "
-                f"EndC={combo_score['EndCapital']:.2f}, "
-                f"Return={combo_score['Return']:.4f}, "
-                f"Sharpe={combo_score['Sharpe']:.4f}, "
-                f"Position={combo_position}\n"
-                f"- B/H StartC={bh_score['StartCapital']:.2f}, "
-                f"EndC={bh_score['EndCapital']:.2f}, "
-                f"Return={bh_score['Return']:.4f}, "
-                f"Sharpe={bh_score['Sharpe']:.4f}\n"
-                f"- 최근 거래로그(5개):\n"
-                + "\n".join(trades_lines)
+            f"백테스트 결과:\n"
+            f"- 콤보 StartC={combo_score['StartCapital']:.2f}, "
+            f"EndC={combo_score['EndCapital']:.2f}, "
+            f"Return={combo_score['Return']:.4f}, "
+            f"Sharpe={combo_score['Sharpe']:.4f}, "
+            f"Position={combo_position}\n"
+            f"- B/H StartC={bh_score['StartCapital']:.2f}, "
+            f"EndC={bh_score['EndCapital']:.2f}, "
+            f"Return={bh_score['Return']:.4f}, "
+            f"Sharpe={bh_score['Sharpe']:.4f}\n"
+            f"- 최근 거래로그(5개):\n"
+            + "\n".join(trades_lines)
         )
 
         send_email = False
@@ -302,7 +286,7 @@ def main_loop(
                     email_subject=mail_subject + " (콘솔)"
                 )
             else:
-                # 동일 포지션일 때
+                # 동일 포지션
                 if alert_on_same_position:
                     mail_subject = "[main_best] 포지션 동일"
                     send_email = True
@@ -324,22 +308,15 @@ def main_loop(
 
 
 def run_main_best_repeated(
-        combo_info: Dict[str, Any],
-        start_date_str: str,
-        interval_seconds: int,
-        alert_on_same_position: bool
+    combo_info: Dict[str, Any],
+    start_date_str: str,
+    interval_seconds: int,
+    alert_on_same_position: bool
 ):
     """
     일정 간격으로 반복 실행.
-    end_date는 main_loop 내부에서 항상 today()로 설정한다.
-
-    Args:
-        combo_info (Dict[str, Any]): 콤보 설정
-        start_date_str (str): 백테스트 시작 시각 (UTC)
-        interval_seconds (int): 반복 간격(초)
-        alert_on_same_position (bool): 동일 포지션 시에도 알림(메일) 보낼지 여부
+    end_date는 main_loop 내부에서 always today().
     """
-    # 기본 타임프레임(예: "1h")이 combo_info에 정의되어 있다고 가정
     timeframe = combo_info.get("timeframe", TIMEFRAMES[0])
 
     # 최초 한 번 실행
@@ -369,19 +346,22 @@ if __name__ == "__main__":
     사용 예시:
       python main_best.py
 
-    - 사용자 정의: MY_START_DATE
-    - end_date는 제거됨(항상 today())로 처리
+    - MY_START_DATE: 백테스트 시작 UTC (예: '2025-01-01 00:00:00')
+    - end_date는 main_loop 내부에서 today()로 매번 갱신.
     - INTERVAL_SECONDS: 반복 주기(초)
-    - ALERT_ON_SAME_POSITION: 동일 포지션 시에도 매번 메일을 보낼지 여부
-    - SEND_EMAIL: 메일 발송 여부 (True/False)
+    - ALERT_ON_SAME_POSITION: 동일 포지션 시에도 매번 메일 보낼지 여부
+    - SEND_EMAIL: 메일 발송 여부(True/False)
     """
+    SEND_EMAIL = False  # 메일 발송여부
+    # 예시 콤보: timeframe=1d, MA(10, 150) 조합
+    MY_COMBO_INFO = {
+        "timeframe": "1d",
+        "combo_params": [
+            {"type": "MA", "short_period": 10, "long_period": 150}
+        ]
+    }
 
-    SEND_EMAIL = True  # 메일 발송 여부
-    MY_COMBO_INFO = {"timeframe": "1d", "combo_params": [{"type": "RSI", "lookback": 7, "overbought": 70, "oversold": 30, "buy_time_delay": 0, "sell_time_delay": 0, "holding_period": float('inf')}, {"type": "DMI_ADX", "dmi_period": 20, "adx_threshold": 25, "buy_time_delay": 0, "sell_time_delay": 0, "holding_period": float('inf')}]}
-
-
-    # 기본값: IS_OOS_BOUNDARY_DATE ~ 오늘
-    MY_START_DATE = IS_OOS_BOUNDARY_DATE  # 예: '2023-01-01 00:00:00'
+    MY_START_DATE = IS_OOS_BOUNDARY_DATE  # 예: '2025-02-14 00:00:00'
     INTERVAL_SECONDS = 300
     ALERT_ON_SAME_POSITION = False
 

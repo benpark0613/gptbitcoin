@@ -52,9 +52,9 @@ except ImportError:
 
 # 지표 파라미터 조합
 try:
-    from backtest.combo_generator import generate_indicator_combos
+    from indicators.combo_generator_for_backtest import generate_indicator_combos
 except ImportError:
-    raise ImportError("combo_generator.py 경로 확인 필요")
+    raise ImportError("combo_generator_for_backtest.py 경로 확인 필요")
 
 # 지표 계산 & 시그널 로직 (MA, RSI 등)
 try:

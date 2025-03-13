@@ -1,4 +1,4 @@
-# gptbitcoin/backtest/combo_generator.py
+# gptbitcoin/backtest/combo_generator_for_backtest.py
 # 구글 스타일, 최소한의 한글 주석
 #
 # 동일한 인디케이터 타입(예: 둘 다 MA, 둘 다 RSI) 조합은 제외하고,

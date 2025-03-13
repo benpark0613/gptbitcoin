@@ -1,8 +1,7 @@
 # gptbitcoin/backtest/run_best.py
 # 최소한의 한글 주석, 구글 스타일 docstring
 # 단일 콤보(베스트 콤보) 백테스트 + 바이앤홀드(B/H) 백테스트를 함께 진행하는 모듈.
-# combo_info 내 buy_time_delay / sell_time_delay / holding_period 가 있으면
-# run_backtest(engine)에 전달한다.
+# 더 이상 buy_time_delay, sell_time_delay, holding_period는 사용하지 않는다.
 
 import pandas as pd
 from typing import Dict, Any, List
@@ -89,7 +88,7 @@ def run_best_single(
     바이앤홀드(B/H) 결과와 함께 반환한다.
 
     1) combo_params 내 지표 파라미터를 기반으로 매매 시그널을 생성한다.
-    2) run_backtest 수행 (buy_time_delay, sell_time_delay, holding_period 있으면 전달)
+    2) run_backtest 수행
     3) 분석 지표(calculate_metrics) 산출
     4) B/H도 별도 백테스트하여 동일 지표 산출
     5) 두 결과를 모두 반환
@@ -120,26 +119,11 @@ def run_best_single(
     df_combo = create_signals_for_combo(df_combo, combo_params, out_col="signal_final")
     combo_signals = df_combo["signal_final"].tolist()
 
-    # 콤보에 명시된 buy_time_delay, sell_time_delay, holding_period 추출
-    buy_td = -1
-    sell_td = -1
-    hold_p = 0
-    for cdict in combo_params:
-        if "buy_time_delay" in cdict:
-            buy_td = cdict["buy_time_delay"]
-        if "sell_time_delay" in cdict:
-            sell_td = cdict["sell_time_delay"]
-        if "holding_period" in cdict:
-            hold_p = cdict["holding_period"]
-
-    # 2) 콤보 백테스트
+    # 2) 콤보 백테스트 (즉시모드)
     combo_engine_out = run_backtest(
         df=df_combo,
         signals=combo_signals,
-        allow_short=True,          # config
-        buy_time_delay=buy_td,
-        sell_time_delay=sell_td,
-        holding_period=hold_p
+        allow_short=True
     )
     combo_trades = combo_engine_out["trades"]
 

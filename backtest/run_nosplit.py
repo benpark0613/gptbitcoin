@@ -1,7 +1,6 @@
 # gptbitcoin/backtest/run_nosplit.py
 # 최소한의 한글 주석, 구글 스타일 docstring을 사용하는 단일(전체) 구간 백테스트 모듈.
-# - Buy & Hold(항상 매수) 전략 + 여러 지표 콤보 전략을 모두 테스트
-# - combo 내 buy_time_delay, sell_time_delay, holding_period가 있으면 자동 적용
+# time_delay, holding_period 로직을 제거해 즉시모드 백테스트로 통일.
 
 import json
 from typing import List, Dict, Any
@@ -69,7 +68,7 @@ def run_nosplit(
     start_capital: float = START_CAPITAL
 ) -> List[Dict[str, Any]]:
     """
-    단일(전체) 구간 백테스트:
+    단일(전체) 구간 백테스트 (즉시모드):
       1) Buy & Hold(항상 매수) 전략을 실행
       2) combos 내 여러 지표 파라미터 조합을 병렬로 백테스트
       3) 결과(성과 + 매매 로그)를 리스트(dict)로 반환
@@ -146,33 +145,18 @@ def run_nosplit(
     # 2) combos 병렬 백테스트
     def _process_combo_single(combo: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        단일 콤보(복수 지표)로 백테스트하여 성과 및 매매 로그를 반환한다.
+        단일 콤보(복수 지표)로 백테스트하여 성과 및 매매 로그를 반환한다. (즉시모드)
         """
         # 시그널 생성
         df_local = create_signals_for_combo(df, combo, out_col="signal_final")
         signals = df_local["signal_final"].tolist()
 
-        # combo 내 buy_time_delay, sell_time_delay, holding_period 추출
-        buy_td = -1
-        sell_td = -1
-        hold_p = 0
-        for cdict in combo:
-            if "buy_time_delay" in cdict:
-                buy_td = cdict["buy_time_delay"]
-            if "sell_time_delay" in cdict:
-                sell_td = cdict["sell_time_delay"]
-            if "holding_period" in cdict:
-                hold_p = cdict["holding_period"]
-
-        # 백테스트
+        # 즉시모드로 run_backtest
         engine_out = run_backtest(
             df_local,
             signals=signals,
             start_capital=start_capital,
-            allow_short=ALLOW_SHORT,
-            buy_time_delay=buy_td,
-            sell_time_delay=sell_td,
-            holding_period=hold_p
+            allow_short=ALLOW_SHORT
         )
         score = calculate_metrics(
             equity_curve=engine_out["equity_curve"],
@@ -201,9 +185,6 @@ def run_nosplit(
             "used_indicators": used_str,
             "trades_log": combo_trades_log
         }
-
-    from strategies.signal_factory import create_signals_for_combo
-    from joblib import Parallel, delayed
 
     parallel_out = Parallel(n_jobs=-1, verbose=5)(
         delayed(_process_combo_single)(combo) for combo in combos

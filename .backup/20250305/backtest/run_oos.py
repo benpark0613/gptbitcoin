@@ -66,9 +66,9 @@ except ImportError:
     raise ImportError("indicators/ or strategies/ 임포트 실패")
 
 try:
-    from backtest.combo_generator import generate_indicator_combos
+    from indicators.combo_generator_for_backtest import generate_indicator_combos
 except ImportError:
-    raise ImportError("combo_generator.py 경로 문제")
+    raise ImportError("combo_generator_for_backtest.py 경로 문제")
 
 
 def _select_ohlcv(conn, symbol, timeframe, start_ts, end_ts) -> pd.DataFrame:

@@ -1,4 +1,4 @@
-# gptbitcoin/backtest/combo_generator.py
+# gptbitcoin/backtest/combo_generator_for_backtest.py
 # 다양한 지표 파라미터 조합을 생성하는 모듈
 # 주석은 필요한 최소한으로 한글 작성, docstring은 구글 스타일
 

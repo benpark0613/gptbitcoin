@@ -2,12 +2,13 @@
 # 보조지표 파라미터 및 매매시그널 정의 (매수: +1, 중립: 0, 매도: -1)
 # 이 설정은 전반적으로 "추세추종" 방식을 가정한다.
 
-INDICATOR_COMBO_SIZES = [1, 2]
+INDICATOR_COMBO_SIZES = [1] # 테스트용 삭제 금지
+# INDICATOR_COMBO_SIZES = [1, 2]
 
 INDICATOR_CONFIG = {
     "MA": {
-        "short_ma_periods": [5, 10, 20, 30, 50, 60],
-        "long_ma_periods": [100, 150, 200, 250, 300],
+        "short_ma_periods": [5, 10, 20, 30, 50],
+        "long_ma_periods": [100, 150, 200, 250],
         # 매매시그널(추세추종): short_ma > long_ma → +1, short_ma < long_ma → -1, 그 외 → 0
     },
 
@@ -18,10 +19,9 @@ INDICATOR_CONFIG = {
     },
 
     "OBV": {
-        "absolute_threshold_periods": [14, 20],
-        "absolute_threshold_percentiles": [80, 90],
-        # 매매시그널(추세추종): OBV가 높은 percentile(상위 임계값) 초과 → +1,
-        #                     낮은 percentile(하위 임계값) 미만 → -1, 그 외 → 0
+        "short_ma_periods": [5, 10, 20, 30, 50, 60],
+        "long_ma_periods": [100, 150, 200, 250, 300],
+        # 매매시그널(추세추종): OBV의 단기이평 > 장기이평 → +1, 단기이평 < 장기이평 → -1, 그 외 → 0
     },
 
     "MACD": {
@@ -76,7 +76,8 @@ INDICATOR_CONFIG = {
     },
 
     "STOCH_RSI": {
-        "lookback_periods": [14, 21],
+        "rsi_periods": [14, 21],       # RSI 계산에 사용될 기간
+        "stoch_periods": [14, 21],     # Stochastic 변환에 사용될 기간
         "k_period": [3, 5],
         "d_period": [3, 5],
         "thresholds": [[20, 80], [25, 75], [30, 70]],
