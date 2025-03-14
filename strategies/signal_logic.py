@@ -1,14 +1,10 @@
 # gptbitcoin/strategies/signal_logic.py
 """
-(추세추종) 시그널 로직을 모아둔 모듈.
-
 구글 스타일 Docstring, 필요한 최소한의 한글 주석만 추가.
 """
 
-import pandas as pd
 import numpy as np
-
-pd.set_option('future.no_silent_downcasting', True)
+import pandas as pd
 
 
 def ma_crossover_signal(
@@ -18,8 +14,8 @@ def ma_crossover_signal(
     signal_col: str
 ) -> pd.DataFrame:
     """
-    이동평균 교차(MA) 시그널 (즉시모드 추세추종).
-    - 단기 MA > 장기 MA이면 +1, 단기 MA < 장기 MA이면 -1, 같으면 0.
+    MA 교차 시그널 (즉시모드 추세추종).
+    - 단기 MA > 장기 MA이면 +1, 단기 MA < 장기 MA이면 -1, NaN은 0 처리.
 
     Args:
         df (pd.DataFrame): 시계열 데이터
@@ -30,21 +26,17 @@ def ma_crossover_signal(
     Returns:
         pd.DataFrame
     """
-    df[signal_col] = 0
     short_arr = df[short_ma_col].values
     long_arr = df[long_ma_col].values
     n = len(df)
 
-    for i in range(n):
-        if pd.isna(short_arr[i]) or pd.isna(long_arr[i]):
-            df.loc[df.index[i], signal_col] = 0
-        elif short_arr[i] > long_arr[i]:
-            df.loc[df.index[i], signal_col] = 1
-        elif short_arr[i] < long_arr[i]:
-            df.loc[df.index[i], signal_col] = -1
-        else:
-            df.loc[df.index[i], signal_col] = 0
+    mask_nan = np.isnan(short_arr) | np.isnan(long_arr)
+    signals = np.zeros(n, dtype=int)
 
+    signals[~mask_nan & (short_arr > long_arr)] = 1
+    signals[~mask_nan & (short_arr < long_arr)] = -1
+
+    df[signal_col] = signals
     return df
 
 
@@ -56,21 +48,27 @@ def obv_ma_signal(
 ) -> pd.DataFrame:
     """
     OBV 단기/장기 이동평균 비교 시그널 (추세추종).
-    이미 즉시모드로 작성되어 있으므로 변경 없음.
+
+    Args:
+        df (pd.DataFrame)
+        obv_short_col (str)
+        obv_long_col (str)
+        signal_col (str)
+
+    Returns:
+        pd.DataFrame
     """
-    df[signal_col] = 0
     short_arr = df[obv_short_col].values
     long_arr = df[obv_long_col].values
     n = len(df)
 
-    for i in range(n):
-        if short_arr[i] > long_arr[i]:
-            df.loc[df.index[i], signal_col] = 1
-        elif short_arr[i] < long_arr[i]:
-            df.loc[df.index[i], signal_col] = -1
-        else:
-            df.loc[df.index[i], signal_col] = 0
+    mask_nan = np.isnan(short_arr) | np.isnan(long_arr)
+    signals = np.zeros(n, dtype=int)
 
+    signals[~mask_nan & (short_arr > long_arr)] = 1
+    signals[~mask_nan & (short_arr < long_arr)] = -1
+
+    df[signal_col] = signals
     return df
 
 
@@ -82,8 +80,8 @@ def rsi_signal(
     signal_col: str
 ) -> pd.DataFrame:
     """
-    RSI 지표 시그널 (즉시모드 추세추종).
-    - RSI > upper_bound면 +1, RSI < lower_bound면 -1, 그 외 0.
+    RSI 시그널 (즉시모드 추세추종).
+    - RSI > upper_bound → +1, RSI < lower_bound → -1, 나머지 0.
 
     Args:
         df (pd.DataFrame)
@@ -95,20 +93,16 @@ def rsi_signal(
     Returns:
         pd.DataFrame
     """
-    df[signal_col] = 0
     arr = df[rsi_col].values
     n = len(df)
 
-    for i in range(n):
-        if pd.isna(arr[i]):
-            df.loc[df.index[i], signal_col] = 0
-        elif arr[i] > upper_bound:
-            df.loc[df.index[i], signal_col] = 1
-        elif arr[i] < lower_bound:
-            df.loc[df.index[i], signal_col] = -1
-        else:
-            df.loc[df.index[i], signal_col] = 0
+    mask_nan = np.isnan(arr)
+    signals = np.zeros(n, dtype=int)
 
+    signals[~mask_nan & (arr > upper_bound)] = 1
+    signals[~mask_nan & (arr < lower_bound)] = -1
+
+    df[signal_col] = signals
     return df
 
 
@@ -120,7 +114,7 @@ def macd_signal(
 ) -> pd.DataFrame:
     """
     MACD 시그널 (즉시모드 추세추종).
-    - MACD 라인 > 시그널 라인이면 +1, 작으면 -1, 같으면 0.
+    - MACD 라인 > 시그널 라인이면 +1, 작으면 -1, NaN은 0.
 
     Args:
         df (pd.DataFrame)
@@ -131,24 +125,17 @@ def macd_signal(
     Returns:
         pd.DataFrame
     """
-    df[signal_col] = 0
-    if macd_line_col not in df.columns or macd_signal_col not in df.columns:
-        return df
-
     macd_arr = df[macd_line_col].values
     sig_arr = df[macd_signal_col].values
     n = len(df)
 
-    for i in range(n):
-        if pd.isna(macd_arr[i]) or pd.isna(sig_arr[i]):
-            df.loc[df.index[i], signal_col] = 0
-        elif macd_arr[i] > sig_arr[i]:
-            df.loc[df.index[i], signal_col] = 1
-        elif macd_arr[i] < sig_arr[i]:
-            df.loc[df.index[i], signal_col] = -1
-        else:
-            df.loc[df.index[i], signal_col] = 0
+    mask_nan = np.isnan(macd_arr) | np.isnan(sig_arr)
+    signals = np.zeros(n, dtype=int)
 
+    signals[~mask_nan & (macd_arr > sig_arr)] = 1
+    signals[~mask_nan & (macd_arr < sig_arr)] = -1
+
+    df[signal_col] = signals
     return df
 
 
@@ -162,8 +149,7 @@ def dmi_adx_signal_trend(
 ) -> pd.DataFrame:
     """
     DMI(+DI/-DI) & ADX 시그널 (즉시모드 추세추종).
-    - ADX >= 임계값이면 +DI와 -DI 비교하여 +1/-1,
-      ADX < 임계값이면 0.
+    - ADX >= adx_threshold 시 +DI/-DI 비교 (+1/-1), 그 외 0.
 
     Args:
         df (pd.DataFrame)
@@ -176,30 +162,21 @@ def dmi_adx_signal_trend(
     Returns:
         pd.DataFrame
     """
-    df[signal_col] = 0
-    for c in [plus_di_col, minus_di_col, adx_col]:
-        if c not in df.columns:
-            return df
-
     plus_arr = df[plus_di_col].values
     minus_arr = df[minus_di_col].values
     adx_arr = df[adx_col].values
     n = len(df)
 
-    for i in range(n):
-        if (pd.isna(plus_arr[i]) or pd.isna(minus_arr[i]) or pd.isna(adx_arr[i])):
-            df.loc[df.index[i], signal_col] = 0
-        elif adx_arr[i] < adx_threshold:
-            df.loc[df.index[i], signal_col] = 0
-        else:
-            # adx가 임계값 이상인 경우 +DI / -DI 비교
-            if plus_arr[i] > minus_arr[i]:
-                df.loc[df.index[i], signal_col] = 1
-            elif plus_arr[i] < minus_arr[i]:
-                df.loc[df.index[i], signal_col] = -1
-            else:
-                df.loc[df.index[i], signal_col] = 0
+    mask_nan = (np.isnan(plus_arr) | np.isnan(minus_arr) | np.isnan(adx_arr))
+    mask_low_adx = adx_arr < adx_threshold
+    signals = np.zeros(n, dtype=int)
 
+    # adx >= threshold
+    valid_mask = (~mask_nan) & (~mask_low_adx)
+    signals[valid_mask & (plus_arr > minus_arr)] = 1
+    signals[valid_mask & (plus_arr < minus_arr)] = -1
+
+    df[signal_col] = signals
     return df
 
 
@@ -213,7 +190,7 @@ def bollinger_signal(
 ) -> pd.DataFrame:
     """
     볼린저 밴드 시그널 (즉시모드 추세추종).
-    - 가격 > upper 밴드면 +1, 가격 < lower 밴드면 -1, 그 외 0.
+    - 가격 > 상단밴드 → +1, 가격 < 하단밴드 → -1.
 
     Args:
         df (pd.DataFrame)
@@ -226,22 +203,18 @@ def bollinger_signal(
     Returns:
         pd.DataFrame
     """
-    df[signal_col] = 0
     price_arr = df[price_col].values
     up_arr = df[upper_col].values
     lo_arr = df[lower_col].values
     n = len(df)
 
-    for i in range(n):
-        if pd.isna(price_arr[i]) or pd.isna(up_arr[i]) or pd.isna(lo_arr[i]):
-            df.loc[df.index[i], signal_col] = 0
-        elif price_arr[i] > up_arr[i]:
-            df.loc[df.index[i], signal_col] = 1
-        elif price_arr[i] < lo_arr[i]:
-            df.loc[df.index[i], signal_col] = -1
-        else:
-            df.loc[df.index[i], signal_col] = 0
+    mask_nan = np.isnan(price_arr) | np.isnan(up_arr) | np.isnan(lo_arr)
+    signals = np.zeros(n, dtype=int)
 
+    signals[~mask_nan & (price_arr > up_arr)] = 1
+    signals[~mask_nan & (price_arr < lo_arr)] = -1
+
+    df[signal_col] = signals
     return df
 
 
@@ -255,10 +228,8 @@ def ichimoku_signal_trend(
     signal_col: str
 ) -> pd.DataFrame:
     """
-    일목균형표 시그널 (즉시모드 추세추종).
-    - 전환선>기준선 & 종가>구름 상단 → +1
-      전환선<기준선 & 종가<구름 하단 → -1
-      그 외는 0.
+    일목균형표 (전환선/기준선/구름) 시그널 (즉시추종).
+    - 전환>기준 & 종가>구름상단 → +1, 전환<기준 & 종가<구름하단 → -1
 
     Args:
         df (pd.DataFrame)
@@ -272,33 +243,28 @@ def ichimoku_signal_trend(
     Returns:
         pd.DataFrame
     """
-    for c in [tenkan_col, kijun_col, span_a_col, span_b_col, price_col]:
-        if c not in df.columns:
-            df[signal_col] = 0
-            return df
-
-    df[signal_col] = 0
     ten_arr = df[tenkan_col].values
     kij_arr = df[kijun_col].values
     span_a_arr = df[span_a_col].values
     span_b_arr = df[span_b_col].values
     price_arr = df[price_col].values
+    n = len(df)
+
+    mask_nan = np.isnan(ten_arr) | np.isnan(kij_arr) | np.isnan(span_a_arr) \
+               | np.isnan(span_b_arr) | np.isnan(price_arr)
 
     cloud_top = np.maximum(span_a_arr, span_b_arr)
     cloud_bot = np.minimum(span_a_arr, span_b_arr)
-    n = len(df)
 
-    for i in range(n):
-        if any(pd.isna([ten_arr[i], kij_arr[i], cloud_top[i], cloud_bot[i], price_arr[i]])):
-            df.loc[df.index[i], signal_col] = 0
-        else:
-            if (ten_arr[i] > kij_arr[i]) and (price_arr[i] > cloud_top[i]):
-                df.loc[df.index[i], signal_col] = 1
-            elif (ten_arr[i] < kij_arr[i]) and (price_arr[i] < cloud_bot[i]):
-                df.loc[df.index[i], signal_col] = -1
-            else:
-                df.loc[df.index[i], signal_col] = 0
+    signals = np.zeros(n, dtype=int)
 
+    cond_long = (ten_arr > kij_arr) & (price_arr > cloud_top) & (~mask_nan)
+    cond_short = (ten_arr < kij_arr) & (price_arr < cloud_bot) & (~mask_nan)
+
+    signals[cond_long] = 1
+    signals[cond_short] = -1
+
+    df[signal_col] = signals
     return df
 
 
@@ -309,8 +275,8 @@ def psar_signal(
     signal_col: str
 ) -> pd.DataFrame:
     """
-    파라볼릭 SAR(PSAR) 시그널 (즉시모드 추세추종).
-    - PSAR < 종가면 +1, PSAR > 종가면 -1, 그 외 0.
+    파라볼릭 SAR 시그널 (즉시모드 추세추종).
+    - PSAR < 종가 → +1, PSAR > 종가 → -1
 
     Args:
         df (pd.DataFrame)
@@ -321,21 +287,17 @@ def psar_signal(
     Returns:
         pd.DataFrame
     """
-    df[signal_col] = 0
     psar_arr = df[psar_col].values
     price_arr = df[price_col].values
     n = len(df)
 
-    for i in range(n):
-        if pd.isna(psar_arr[i]) or pd.isna(price_arr[i]):
-            df.loc[df.index[i], signal_col] = 0
-        elif psar_arr[i] < price_arr[i]:
-            df.loc[df.index[i], signal_col] = 1
-        elif psar_arr[i] > price_arr[i]:
-            df.loc[df.index[i], signal_col] = -1
-        else:
-            df.loc[df.index[i], signal_col] = 0
+    mask_nan = np.isnan(psar_arr) | np.isnan(price_arr)
+    signals = np.zeros(n, dtype=int)
 
+    signals[~mask_nan & (psar_arr < price_arr)] = 1
+    signals[~mask_nan & (psar_arr > price_arr)] = -1
+
+    df[signal_col] = signals
     return df
 
 
@@ -347,7 +309,7 @@ def supertrend_signal(
 ) -> pd.DataFrame:
     """
     슈퍼트렌드 시그널 (즉시모드 추세추종).
-    - 가격 > 슈퍼트렌드면 +1, 가격 < 슈퍼트렌드면 -1, 같으면 0.
+    - 가격 > supertrend → +1, 가격 < supertrend → -1
 
     Args:
         df (pd.DataFrame)
@@ -358,21 +320,17 @@ def supertrend_signal(
     Returns:
         pd.DataFrame
     """
-    df[signal_col] = 0
     st_arr = df[st_col].values
     price_arr = df[price_col].values
     n = len(df)
 
-    for i in range(n):
-        if pd.isna(st_arr[i]) or pd.isna(price_arr[i]):
-            df.loc[df.index[i], signal_col] = 0
-        elif price_arr[i] > st_arr[i]:
-            df.loc[df.index[i], signal_col] = 1
-        elif price_arr[i] < st_arr[i]:
-            df.loc[df.index[i], signal_col] = -1
-        else:
-            df.loc[df.index[i], signal_col] = 0
+    mask_nan = np.isnan(st_arr) | np.isnan(price_arr)
+    signals = np.zeros(n, dtype=int)
 
+    signals[~mask_nan & (price_arr > st_arr)] = 1
+    signals[~mask_nan & (price_arr < st_arr)] = -1
+
+    df[signal_col] = signals
     return df
 
 
@@ -385,22 +343,30 @@ def donchian_signal(
 ) -> pd.DataFrame:
     """
     돈채널(Donchian) 시그널 (추세추종).
-    이미 즉시모드로 작성되어 있으므로 변경 없음.
+    - 가격 > upper → +1, 가격 < lower → -1
+
+    Args:
+        df (pd.DataFrame)
+        lower_col (str)
+        upper_col (str)
+        price_col (str)
+        signal_col (str)
+
+    Returns:
+        pd.DataFrame
     """
-    df[signal_col] = 0
     price_arr = df[price_col].values
     low_arr = df[lower_col].values
     up_arr = df[upper_col].values
     n = len(df)
 
-    for i in range(n):
-        if price_arr[i] > up_arr[i]:
-            df.loc[df.index[i], signal_col] = 1
-        elif price_arr[i] < low_arr[i]:
-            df.loc[df.index[i], signal_col] = -1
-        else:
-            df.loc[df.index[i], signal_col] = 0
+    mask_nan = np.isnan(price_arr) | np.isnan(low_arr) | np.isnan(up_arr)
+    signals = np.zeros(n, dtype=int)
 
+    signals[~mask_nan & (price_arr > up_arr)] = 1
+    signals[~mask_nan & (price_arr < low_arr)] = -1
+
+    df[signal_col] = signals
     return df
 
 
@@ -414,21 +380,33 @@ def stoch_signal(
 ) -> pd.DataFrame:
     """
     스토캐스틱 시그널 (추세추종).
-    이미 즉시모드로 작성되어 있으므로 변경 없음.
+    - K & D > upper_threshold → +1, K & D < lower_threshold → -1
+
+    Args:
+        df (pd.DataFrame)
+        stoch_k_col (str)
+        stoch_d_col (str)
+        lower_threshold (float)
+        upper_threshold (float)
+        signal_col (str)
+
+    Returns:
+        pd.DataFrame
     """
-    df[signal_col] = 0
     k_arr = df[stoch_k_col].values
     d_arr = df[stoch_d_col].values
     n = len(df)
 
-    for i in range(n):
-        if k_arr[i] >= upper_threshold and d_arr[i] >= upper_threshold:
-            df.loc[df.index[i], signal_col] = 1
-        elif k_arr[i] <= lower_threshold and d_arr[i] <= lower_threshold:
-            df.loc[df.index[i], signal_col] = -1
-        else:
-            df.loc[df.index[i], signal_col] = 0
+    mask_nan = np.isnan(k_arr) | np.isnan(d_arr)
+    signals = np.zeros(n, dtype=int)
 
+    cond_long = (k_arr >= upper_threshold) & (d_arr >= upper_threshold) & (~mask_nan)
+    cond_short = (k_arr <= lower_threshold) & (d_arr <= lower_threshold) & (~mask_nan)
+
+    signals[cond_long] = 1
+    signals[cond_short] = -1
+
+    df[signal_col] = signals
     return df
 
 
@@ -442,49 +420,34 @@ def stoch_rsi_signal(
 ) -> pd.DataFrame:
     """
     스토캐스틱 RSI 시그널 (추세추종).
-    이미 즉시모드로 작성되어 있으므로 변경 없음.
+    - K & D > upper_threshold → +1, K & D < lower_threshold → -1
+
+    Args:
+        df (pd.DataFrame)
+        k_col (str)
+        d_col (str)
+        lower_threshold (float)
+        upper_threshold (float)
+        signal_col (str)
+
+    Returns:
+        pd.DataFrame
     """
-    df[signal_col] = 0
     k_arr = df[k_col].values
     d_arr = df[d_col].values
     n = len(df)
 
-    for i in range(n):
-        if k_arr[i] >= upper_threshold and d_arr[i] >= upper_threshold:
-            df.loc[df.index[i], signal_col] = 1
-        elif k_arr[i] <= lower_threshold and d_arr[i] <= lower_threshold:
-            df.loc[df.index[i], signal_col] = -1
-        else:
-            df.loc[df.index[i], signal_col] = 0
+    mask_nan = np.isnan(k_arr) | np.isnan(d_arr)
+    signals = np.zeros(n, dtype=int)
 
+    cond_long = (k_arr >= upper_threshold) & (d_arr >= upper_threshold) & (~mask_nan)
+    cond_short = (k_arr <= lower_threshold) & (d_arr <= lower_threshold) & (~mask_nan)
+
+    signals[cond_long] = 1
+    signals[cond_short] = -1
+
+    df[signal_col] = signals
     return df
-
-
-def mfi_signal(
-    df: pd.DataFrame,
-    mfi_col: str,
-    lower_threshold: float,
-    upper_threshold: float,
-    signal_col: str
-) -> pd.DataFrame:
-    """
-    MFI(Money Flow Index) 시그널 (추세추종).
-    이미 즉시모드로 작성되어 있으므로 변경 없음.
-    """
-    df[signal_col] = 0
-    mfi_arr = df[mfi_col].values
-    n = len(df)
-
-    for i in range(n):
-        if mfi_arr[i] >= upper_threshold:
-            df.loc[df.index[i], signal_col] = 1
-        elif mfi_arr[i] <= lower_threshold:
-            df.loc[df.index[i], signal_col] = -1
-        else:
-            df.loc[df.index[i], signal_col] = 0
-
-    return df
-
 
 def vwap_signal(
     df: pd.DataFrame,
@@ -494,17 +457,24 @@ def vwap_signal(
 ) -> pd.DataFrame:
     """
     VWAP 시그널 (추세추종).
-    이미 즉시모드로 작성되어 있으므로 변경 없음.
+    - 가격 > VWAP → +1, 그 외 → -1
+
+    Args:
+        df (pd.DataFrame)
+        vwap_col (str)
+        price_col (str)
+        signal_col (str)
+
+    Returns:
+        pd.DataFrame
     """
-    df[signal_col] = 0
     vw_arr = df[vwap_col].values
     pr_arr = df[price_col].values
     n = len(df)
 
-    for i in range(n):
-        if pr_arr[i] > vw_arr[i]:
-            df.loc[df.index[i], signal_col] = 1
-        else:
-            df.loc[df.index[i], signal_col] = -1
+    mask_nan = np.isnan(vw_arr) | np.isnan(pr_arr)
+    signals = np.full(n, -1, dtype=int)  # 디폴트 -1
+    signals[~mask_nan & (pr_arr > vw_arr)] = 1
 
+    df[signal_col] = signals
     return df

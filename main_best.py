@@ -228,8 +228,8 @@ def main_loop(
 
         # 거래로그 - 최신 5개만
         trades_lines = combo_trades_log.split("\n")
-        if len(trades_lines) > 5:
-            trades_lines = trades_lines[-5:]
+        if len(trades_lines) > 10:
+            trades_lines = trades_lines[-10:]
 
         logging.info("[Combo TradesLog]")
         for ln in trades_lines:
@@ -352,17 +352,13 @@ if __name__ == "__main__":
     - ALERT_ON_SAME_POSITION: 동일 포지션 시에도 매번 메일 보낼지 여부
     - SEND_EMAIL: 메일 발송 여부(True/False)
     """
-    SEND_EMAIL = False  # 메일 발송여부
+    SEND_EMAIL = True  # 메일 발송여부
     # 예시 콤보: timeframe=1d, MA(10, 150) 조합
-    MY_COMBO_INFO = {
-        "timeframe": "1d",
-        "combo_params": [
-            {"type": "MA", "short_period": 10, "long_period": 150}
-        ]
-    }
+    MY_COMBO_INFO = {"timeframe": "4h", "combo_params": [{"type": "MA", "short_period": 5, "long_period": 150}, {"type": "DMI_ADX", "lookback": 20, "adx_threshold": 30}]}
+    # MY_COMBO_INFO = {"timeframe": "15m", "combo_params": [{"type": "MA", "short_period": 10, "long_period": 150}, {"type": "DMI_ADX", "lookback": 28, "adx_threshold": 35}]}
 
     MY_START_DATE = IS_OOS_BOUNDARY_DATE  # 예: '2025-02-14 00:00:00'
-    INTERVAL_SECONDS = 300
+    INTERVAL_SECONDS = 30
     ALERT_ON_SAME_POSITION = False
 
     logging.info(

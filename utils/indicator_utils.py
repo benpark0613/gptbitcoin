@@ -107,13 +107,7 @@ def get_required_warmup_bars(cfg: Dict[str, Any]) -> int:
             # 예: max(rsi_list)=21, max(stoch_list)=21, max(k_list)=5, max(d_list)=5 => 52개 정도 필요
             candidates.append(max(rsi_list) + max(stoch_list) + max(k_list) + max(d_list))
 
-    # 13) MFI
-    if "MFI" in cfg:
-        lb_list = cfg["MFI"].get("lookback_periods", [])
-        if lb_list:
-            candidates.append(max(lb_list))
-
-    # 14) VWAP
+    # 13) VWAP
     # 별도 기간 파라미터 없음
 
     if not candidates:

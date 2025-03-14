@@ -1,6 +1,6 @@
 # gptbitcoin/backtest/run_is.py
 # 구글 스타일 Docstring, 최소한의 한글 주석
-# In-Sample(IS) 백테스트 모듈 (time_delay, holding_period 제거)
+# In-Sample(IS) 백테스트 모듈
 
 import json
 from typing import List, Dict, Any
@@ -27,7 +27,6 @@ def run_is(
     2) combos에 있는 각 지표 파라미터 조합을 병렬로 백테스트한다.
     3) 각 콤보의 Return을 Buy & Hold Return과 비교해 is_passed 여부를 결정한다.
     4) 각 콤보의 결과(성과 지표)를 dict 형태로 리스트에 담아 반환한다.
-       (time_delay, holding_period 제거됨)
 
     Args:
         df_is (pd.DataFrame): IS 구간 시계열 데이터 (OHLCV + 지표)
@@ -91,7 +90,6 @@ def run_is(
     def _process_combo(combo: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         콤보(여러 지표 dict)로 IS 백테스트 후 결과를 반환한다.
-        (time_delay, holding_period 파라미터는 무시)
         """
         # 콤보별 매매 시그널 생성
         df_local = create_signals_for_combo(df_is, combo, out_col="signal_final")

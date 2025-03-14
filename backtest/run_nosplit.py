@@ -138,7 +138,7 @@ def run_nosplit(
         "trades": bh_score["Trades"],
         "sharpe": bh_score["Sharpe"],
         "mdd": bh_score["MDD"],
-        "used_indicators": "Buy & Hold",
+        "used_indicators": "Buy and Hold",
         "trades_log": bh_trades_log
     })
 

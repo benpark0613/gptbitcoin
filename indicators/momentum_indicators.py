@@ -104,22 +104,3 @@ def calc_stoch_rsi(
 
     stochrsi_df.rename(columns=rename_map, inplace=True)
     return stochrsi_df
-
-
-def calc_mfi(df: pd.DataFrame, lookback: int) -> pd.Series:
-    """
-    MFI(Money Flow Index) 지표 계산.
-    - df["high"], df["low"], df["close"], df["volume"]가 필요
-    - 반환 시리즈 이름 예) "mfi_{lookback}"
-    """
-    mfi_sr = ta.mfi(
-        high=df["high"],
-        low=df["low"],
-        close=df["close"],
-        volume=df["volume"],
-        length=lookback
-    )
-    if mfi_sr is None or mfi_sr.empty:
-        return pd.Series([np.nan] * len(df), index=df.index, name=f"mfi_{lookback}")
-    mfi_sr.name = f"mfi_{lookback}"
-    return mfi_sr

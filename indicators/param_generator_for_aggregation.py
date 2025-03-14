@@ -7,28 +7,7 @@
 한 번에 보조지표를 전부 계산하기 위한 모듈.
 
 이 모듈은 config/indicator_config.py의 설정값(기간, 파라미터 등)에 따라
-모든 보조지표를 한 번에 DataFrame에 추가한다. 예를 들어:
-- MA(short_ma_periods, long_ma_periods)
-- RSI(lookback_periods)
-- OBV(단일 raw + short/long 이동평균)
-- MACD(fast, slow, signal)
-- DMI_ADX
-- BOLL
-- ICHIMOKU
-- PSAR
-- SUPERTREND
-- DONCHIAN_CHANNEL
-- STOCH
-- STOCH_RSI
-- MFI
-- VWAP
-
-사용 예시:
-    from indicators.param_generator_for_aggregation import calc_all_indicators_for_aggregation
-    from config.indicator_config import INDICATOR_CONFIG
-
-    df_with_inds = calc_all_indicators_for_aggregation(df, INDICATOR_CONFIG)
-    # df_with_inds에 모든 지표 컬럼이 추가됨
+모든 보조지표를 한 번에 DataFrame에 추가한다.
 """
 
 from typing import Dict
@@ -36,7 +15,7 @@ import pandas as pd
 
 # 필요한 지표 계산 함수들 (이미 프로젝트 내 존재)
 from indicators.momentum_indicators import (
-    calc_rsi, calc_stoch, calc_stoch_rsi, calc_mfi
+    calc_rsi, calc_stoch, calc_stoch_rsi
 )
 from indicators.trend_indicators import (
     calc_sma, calc_macd, calc_dmi_adx, calc_ichimoku,
@@ -48,29 +27,7 @@ from indicators.volume_indicators import calc_obv, calc_vwap
 
 def calc_all_indicators_for_aggregation(df: pd.DataFrame,
                                         cfg: Dict[str, Dict]) -> pd.DataFrame:
-    """
-    config/indicator_config.py에 정의된 모든 보조지표를
-    한 번에 계산하여 df에 새로운 컬럼으로 추가한다.
 
-    Args:
-        df (pd.DataFrame): OHLCV DataFrame
-          - 반드시 ["close"] 등 필요한 컬럼이 포함되어 있어야 함.
-        cfg (Dict[str, Dict]): indicator_config.py 내용
-          - 예: {
-              "MA": {
-                  "short_ma_periods": [...],
-                  "long_ma_periods": [...]
-              },
-              "RSI": {
-                  "lookback_periods": [...],
-                  "thresholds": [...]
-              },
-              ...
-            }
-
-    Returns:
-        pd.DataFrame: 지표 컬럼이 추가된 DataFrame (원본 df를 복사하지 않고 직접 변경).
-    """
     # df를 바로 수정하고 싶지 않다면 copy() 사용 가능
     # 여기서는 df에 바로 붙인다고 가정
     new_cols = pd.DataFrame(index=df.index)
@@ -263,18 +220,7 @@ def calc_all_indicators_for_aggregation(df: pd.DataFrame,
                         new_cols = pd.concat([new_cols, srsi_df], axis=1)
 
     # -----------------------------------------------------------------
-    # 13) MFI
-    # -----------------------------------------------------------------
-    if "MFI" in cfg:
-        mfi_cfg = cfg["MFI"]
-        lb_list = mfi_cfg.get("lookback_periods", [])
-        # threshold는 시그널용
-        for lb in lb_list:
-            mfi_sr = calc_mfi(df, lb)
-            new_cols[mfi_sr.name] = mfi_sr
-
-    # -----------------------------------------------------------------
-    # 14) VWAP
+    # 13) VWAP
     # -----------------------------------------------------------------
     if "VWAP" in cfg:
         # 별도 파라미터 없음

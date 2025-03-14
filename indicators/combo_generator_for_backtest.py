@@ -16,12 +16,6 @@ def get_ma_param_dicts(cfg: dict) -> List[dict]:
     이동평균(MA) 파라미터 조합을 생성한다.
     - short_ma_periods, long_ma_periods를 분리하여
       sp < lp 조건을 만족하는 쌍만 combo로 만든다.
-
-    Returns: 예) [
-      { "type": "MA", "short_period":5, "long_period":20 },
-      { "type": "MA", "short_period":5, "long_period":30 },
-      ...
-    ]
     """
     short_list = cfg["short_ma_periods"]
     long_list = cfg["long_ma_periods"]
@@ -269,32 +263,6 @@ def get_stoch_rsi_param_dicts(cfg: dict) -> List[dict]:
     return results
 
 
-def get_mfi_param_dicts(cfg: dict) -> List[dict]:
-    """
-    MFI(lookback_periods, thresholds)
-    """
-    lb_list = cfg["lookback_periods"]
-    thr_sets = cfg.get("thresholds", [])
-    results = []
-    for lb in lb_list:
-        if thr_sets:
-            for thr in thr_sets:
-                low, high = thr
-                results.append({
-                    "type": "MFI",
-                    "lookback": lb,
-                    "oversold": low,
-                    "overbought": high
-                })
-        else:
-            # threshold 없는 경우
-            results.append({
-                "type": "MFI",
-                "lookback": lb
-            })
-    return results
-
-
 def get_vwap_param_dicts(cfg: dict) -> List[dict]:
     """
     VWAP(별도 파라미터 없음)
@@ -350,9 +318,6 @@ def get_indicator_param_dicts() -> Dict[str, List[dict]]:
 
     if "STOCH_RSI" in cfg:
         result["STOCH_RSI"] = get_stoch_rsi_param_dicts(cfg["STOCH_RSI"])
-
-    if "MFI" in cfg:
-        result["MFI"] = get_mfi_param_dicts(cfg["MFI"])
 
     if "VWAP" in cfg:
         result["VWAP"] = get_vwap_param_dicts(cfg["VWAP"])

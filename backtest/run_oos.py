@@ -1,6 +1,6 @@
 # gptbitcoin/backtest/run_oos.py
 # 구글 스타일 docstring 사용, 최소한의 한글 주석.
-# OOS(아웃샘플) 구간 백테스트 모듈 (time_delay, holding_period 제거)
+# OOS(아웃샘플) 구간 백테스트 모듈
 
 import json
 from typing import List, Dict, Any
@@ -11,6 +11,7 @@ from joblib import Parallel, delayed
 from config.config import ALLOW_SHORT, START_CAPITAL
 from analysis.scoring import calculate_metrics
 from backtest.engine import run_backtest
+from config.indicator_config import SIGNAL_COMBINE_METHOD
 from strategies.signal_factory import create_signals_for_combo
 from utils.date_time import ms_to_kst_str
 
@@ -97,7 +98,6 @@ def run_oos(
       2) combos 내 모든 지표 파라미터 조합별로 백테스트를 병렬로 수행.
       3) 각 콤보별 OOS 성과(딕셔너리)를 리스트로 반환하며,
          매매 내역 로그(oos_trades_log)와 현재 포지션(oos_current_position)도 포함.
-      (time_delay, holding_period 제거됨)
 
     Args:
         df_oos (pd.DataFrame): OOS 구간 시계열 데이터 (OHLCV 및 지표)
@@ -167,7 +167,6 @@ def run_oos(
     def _process_combo_oos(combo: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         주어진 콤보(복수 지표)로 OOS 구간 백테스트 후 결과(성과 + 매매 로그) 반환.
-        (time_delay, holding_period 파라미터는 무시)
         """
         df_local = create_signals_for_combo(df_oos, combo, out_col="signal_oos_final")
         signals = df_local["signal_oos_final"].tolist()
@@ -187,7 +186,7 @@ def run_oos(
         )
         combo_trades_log = _record_trades_info(df_local, engine_out["trades"])
         current_position = _detect_oos_current_position(engine_out["trades"], df_local)
-        combo_info = {"timeframe": timeframe, "combo_params": combo}
+        combo_info = {"timeframe": timeframe, "SIGNAL_COMBINE_METHOD": SIGNAL_COMBINE_METHOD , "combo_params": combo}
         used_str = json.dumps(combo_info, ensure_ascii=False)
 
         return {
